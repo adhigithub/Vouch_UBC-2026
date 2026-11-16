@@ -1,0 +1,131 @@
+// The server's storage: one SQLite file (Node's built-in node:sqlite, no install).
+//
+//   endpoints    what can be bought (loaded from the fake APIs' /catalog)
+//   payments     payments QuickNode confirmed really happened on Solana
+//   ratings      agent good/bad ratings, one per payment
+//   reviews      human 1-5 star reviews, one per payment
+//   test_scores  the tester bot's latest score per endpoint (T)
+import { DatabaseSync } from "node:sqlite";
+
+export function openDb(file = ":memory:") {
+  const db = new DatabaseSync(file);
+  db.exec(`
+    PRAGMA journal_mode = WAL;
+
+    CREATE TABLE IF NOT EXISTS endpoints (
+      id            TEXT PRIMARY KEY,   -- "weather-api-1/current"
+      api           TEXT NOT NULL,
+      task          TEXT NOT NULL,      -- "weather", "crypto-price", ...
+      url           TEXT NOT NULL,
+      price         REAL NOT NULL,      -- USD
+      pay_to        TEXT,               -- endpoint wallet
+      pay_to_ata    TEXT,               -- endpoint's USDC token account (what payments land in)
+      schema_json   TEXT NOT NULL DEFAULT '{}',
+      updated_at    TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS payments (
+      payment_id         TEXT PRIMARY KEY, -- Solana transaction signature
+      from_wallet        TEXT NOT NULL,    -- who paid (owner of the source USDC account)
+      from_token_account TEXT,
+      to_wallet          TEXT,
+      to_token_account   TEXT NOT NULL,
+      mint               TEXT NOT NULL,
+      amount_raw         TEXT NOT NULL,    -- base units, 6 decimals for USDC
+      slot               INTEGER,
+      block_time         INTEGER,
+      received_at        TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS payments_to ON payments(to_token_account);
+    CREATE INDEX IF NOT EXISTS payments_from ON payments(from_wallet);
+
+    CREATE TABLE IF NOT EXISTS ratings (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      endpoint_id  TEXT NOT NULL,
+      payment_id   TEXT NOT NULL UNIQUE,  -- each payment can be rated once
+      rater        TEXT NOT NULL,
+      rating       TEXT NOT NULL CHECK (rating IN ('good', 'bad')),
+      reason       TEXT,
+      created_at   TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS ratings_endpoint ON ratings(endpoint_id);
+
+    CREATE TABLE IF NOT EXISTS reviews (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      endpoint_id  TEXT NOT NULL,
+      payment_id   TEXT NOT NULL UNIQUE,  -- each payment can be reviewed once
+      reviewer     TEXT NOT NULL,
+      stars        INTEGER NOT NULL CHECK (stars BETWEEN 1 AND 5),
+      comment      TEXT,
+      source       TEXT,                  -- "web" or "x"
+      created_at   TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS reviews_endpoint ON reviews(endpoint_id);
+
+    CREATE TABLE IF NOT EXISTS test_scores (
+      endpoint_id  TEXT PRIMARY KEY,
+      score        REAL NOT NULL,
+      updated_at   TEXT NOT NULL
+    );
+  `);
+  return db;
+}
+
+const now = () => new Date().toISOString();
+
+// ---------- endpoints ----------
+
+export function upsertEndpoints(db, list) {
+  const stmt = db.prepare(`
+    INSERT INTO endpoints (id, api, task, url, price, pay_to, pay_to_ata, schema_json, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET api=excluded.api, task=excluded.task, url=excluded.url,
+      price=excluded.price, pay_to=excluded.pay_to, pay_to_ata=excluded.pay_to_ata,
+      schema_json=excluded.schema_json, updated_at=excluded.updated_at
+  `);
+  for (const e of list) {
+    stmt.run(e.id, e.api, e.task, e.url, e.price, e.payTo ?? null, e.payToTokenAccount ?? null, JSON.stringify(e.schema ?? {}), now());
+  }
+}
+
+export const getEndpoint = (db, id) => db.prepare("SELECT * FROM endpoints WHERE id = ?").get(id);
+export const listEndpoints = (db) => db.prepare("SELECT * FROM endpoints ORDER BY id").all();
+
+// ---------- payments ----------
+
+/** Returns true if the payment was new, false if we already had it. */
+export function insertPayment(db, p) {
+  const r = db
+    .prepare(`
+      INSERT OR IGNORE INTO payments
+        (payment_id, from_wallet, from_token_account, to_wallet, to_token_account, mint, amount_raw, slot, block_time, received_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `)
+    .run(p.paymentId, p.from, p.fromTokenAccount ?? null, p.to ?? null, p.toTokenAccount, p.mint, String(p.amountRaw), p.slot ?? null, p.blockTime ?? null, now());
+  return r.changes > 0;
+}
+
+export const getPayment = (db, id) => db.prepare("SELECT * FROM payments WHERE payment_id = ?").get(id);
+
+// ---------- ratings + reviews ----------
+
+export function insertRating(db, r) {
+  db.prepare(`INSERT INTO ratings (endpoint_id, payment_id, rater, rating, reason, created_at) VALUES (?, ?, ?, ?, ?, ?)`)
+    .run(r.endpointId, r.paymentId, r.rater, r.rating, r.reason ?? null, now());
+}
+export const ratingForPayment = (db, paymentId) => db.prepare("SELECT * FROM ratings WHERE payment_id = ?").get(paymentId);
+
+export function insertReview(db, r) {
+  db.prepare(`INSERT INTO reviews (endpoint_id, payment_id, reviewer, stars, comment, source, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`)
+    .run(r.endpointId, r.paymentId, r.reviewer, r.stars, r.comment ?? null, r.source ?? null, now());
+}
+export const reviewForPayment = (db, paymentId) => db.prepare("SELECT * FROM reviews WHERE payment_id = ?").get(paymentId);
+
+// ---------- test scores ----------
+
+export function setTestScore(db, endpointId, score) {
+  db.prepare(`
+    INSERT INTO test_scores (endpoint_id, score, updated_at) VALUES (?, ?, ?)
+    ON CONFLICT(endpoint_id) DO UPDATE SET score=excluded.score, updated_at=excluded.updated_at
+  `).run(endpointId, score, now());
+}
