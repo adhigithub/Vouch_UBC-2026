@@ -7,10 +7,13 @@ import { openDb, upsertEndpoints } from "../src/db.js";
 import { createApp } from "../src/app.js";
 import { ratingMessage, reviewMessage } from "../src/signatures.js";
 import { paymentsFromTransaction } from "../src/parse-payment.js";
+import { signLikeQuickNode } from "../src/quicknode-signature.js";
+import { gzipSync } from "node:zlib";
 
 const MINT = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU";
 const SECRET = "test-webhook-secret";
 const ADMIN = "test-admin-token";
+const QN_TOKEN = "test-quicknode-security-token";
 
 // ---------- test wallets (real ed25519 keys, Solana-style base58 addresses) ----------
 
@@ -44,7 +47,7 @@ before(async () => {
     { id: "weather-pricey/current", api: "weather-pricey", task: "weather", url: "http://x/wp", price: 0.02, payTo: "P_OWNER", payToTokenAccount: "ATA_PRICEY", schema: {} },
     { id: "crypto-x/price", api: "crypto-x", task: "crypto-price", url: "http://x/c", price: 0.01, payTo: "C_OWNER", payToTokenAccount: "ATA_CRYPTO", schema: {} },
   ]);
-  const app = createApp({ db, config: { webhookSecret: SECRET, adminToken: ADMIN, defaultTestScore: 80, usdcMint: MINT }, log: () => {} });
+  const app = createApp({ db, config: { qnStreamSecret: QN_TOKEN, webhookSecret: SECRET, adminToken: ADMIN, defaultTestScore: 80, usdcMint: MINT }, log: () => {} });
   server = app.listen(0);
   await new Promise((r) => server.once("listening", r));
   base = `http://localhost:${server.address().port}`;
@@ -83,6 +86,35 @@ test("webhook: accepts our payments, ignores other mints/accounts, de-duplicates
   ]);
   assert.equal(r.status, 200);
   assert.deepEqual(r.body, { received: 7, accepted: 4, duplicates: 1, ignored: 2 });
+});
+
+test("webhook: accepts deliveries signed by our QuickNode Stream (X-QN-Signature)", async () => {
+  const raw = JSON.stringify({ payments: [payment("p-qn-1", "ATA_CRYPTO")] });
+  const res = await fetch(base + "/webhook/quicknode", { method: "POST", headers: { "content-type": "application/json", ...signLikeQuickNode(raw, QN_TOKEN) }, body: raw });
+  assert.equal(res.status, 200);
+  assert.equal((await res.json()).accepted, 1);
+});
+
+test("webhook: gzip-compressed QuickNode deliveries work too", async () => {
+  const raw = JSON.stringify({ payments: [payment("p-qn-gz", "ATA_CRYPTO")] });
+  const res = await fetch(base + "/webhook/quicknode", {
+    method: "POST",
+    headers: { "content-type": "application/json", "content-encoding": "gzip", ...signLikeQuickNode(raw, QN_TOKEN) },
+    body: gzipSync(raw),
+  });
+  assert.equal(res.status, 200);
+  assert.equal((await res.json()).accepted, 1);
+});
+
+test("webhook: rejects a wrong QuickNode signature or a body changed after signing", async () => {
+  const raw = JSON.stringify({ payments: [payment("p-qn-forged", "ATA_CRYPTO")] });
+  const forged = await fetch(base + "/webhook/quicknode", { method: "POST", headers: { "content-type": "application/json", ...signLikeQuickNode(raw, "not-our-token") }, body: raw });
+  assert.equal(forged.status, 401);
+
+  const tampered = raw.replace("10000", "99990000");
+  const res = await fetch(base + "/webhook/quicknode", { method: "POST", headers: { "content-type": "application/json", ...signLikeQuickNode(raw, QN_TOKEN) }, body: tampered });
+  assert.equal(res.status, 401);
+  assert.equal((await res.json()).reason, "bad signature");
 });
 
 // ---------- /rate: the scams ----------
