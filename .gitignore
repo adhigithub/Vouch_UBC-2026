@@ -1,0 +1,6 @@
+# Secrets (private keys) - never commit
+.env
+*.env.local
+
+# Installed libraries
+node_modules/
