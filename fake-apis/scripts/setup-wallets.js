@@ -67,28 +67,51 @@ function parseSecret(value) {
 
 const signerOf = (secret) => createKeyPairSignerFromBytes(new Uint8Array(secret));
 
-// ---------- 1. keys ----------
+// ---------- 1 + 2. keys and public file ----------
+//
+// wallets.json is committed, but wallets.secret.json only exists on the machine
+// that first ran setup. On any other machine we must NOT generate new keys:
+// that would silently replace the endpoint addresses everyone else relies on.
+// Instead we run in "accounts-only" mode: read the committed addresses and just
+// create any missing USDC accounts (which needs a payer, not the endpoint keys).
 
-const secrets = fs.existsSync(SECRET_FILE)
-  ? JSON.parse(fs.readFileSync(SECRET_FILE, "utf8"))
-  : { note: "DEVNET ONLY. Never commit this file.", payer: null, testBuyer: null, endpoints: {} };
+const committed = fs.existsSync(PUBLIC_FILE) ? JSON.parse(fs.readFileSync(PUBLIC_FILE, "utf8")) : null;
+const accountsOnly = !fs.existsSync(SECRET_FILE) && Object.keys(committed?.endpoints || {}).length > 0;
 
-secrets.payer ??= await newSecret();
-secrets.testBuyer ??= await newSecret();
-for (const e of ENDPOINTS) secrets.endpoints[e.id] ??= await newSecret();
-fs.writeFileSync(SECRET_FILE, JSON.stringify(secrets, null, 2));
+let secrets = null;
+let pub;
 
-// ---------- 2. public file ----------
+if (accountsOnly) {
+  const missing = ENDPOINTS.filter((e) => !committed.endpoints[e.id]);
+  if (missing.length) {
+    console.error(
+      `wallets.json has no wallet for: ${missing.map((e) => e.id).join(", ")}\n` +
+        `New endpoint wallets can only be added on the machine that has wallets.secret.json.`,
+    );
+    process.exit(1);
+  }
+  pub = committed;
+  console.log("No wallets.secret.json here: using the committed wallets.json as-is (accounts-only mode).");
+} else {
+  secrets = fs.existsSync(SECRET_FILE)
+    ? JSON.parse(fs.readFileSync(SECRET_FILE, "utf8"))
+    : { note: "DEVNET ONLY. Never commit this file.", payer: null, testBuyer: null, endpoints: {} };
 
-const pub = { network: "solana-devnet", usdcMint: USDC_DEVNET_MINT, testBuyer: null, endpoints: {} };
-pub.testBuyer = (await signerOf(secrets.testBuyer)).address;
-for (const e of ENDPOINTS) {
-  const owner = (await signerOf(secrets.endpoints[e.id])).address;
-  const [usdcAta] = await findAssociatedTokenPda({ owner, mint: USDC_DEVNET_MINT, tokenProgram: TOKEN_PROGRAM_ADDRESS });
-  pub.endpoints[e.id] = { address: owner, usdcAta };
+  secrets.payer ??= await newSecret();
+  secrets.testBuyer ??= await newSecret();
+  for (const e of ENDPOINTS) secrets.endpoints[e.id] ??= await newSecret();
+  fs.writeFileSync(SECRET_FILE, JSON.stringify(secrets, null, 2));
+
+  pub = { network: "solana-devnet", usdcMint: USDC_DEVNET_MINT, testBuyer: null, endpoints: {} };
+  pub.testBuyer = (await signerOf(secrets.testBuyer)).address;
+  for (const e of ENDPOINTS) {
+    const owner = (await signerOf(secrets.endpoints[e.id])).address;
+    const [usdcAta] = await findAssociatedTokenPda({ owner, mint: USDC_DEVNET_MINT, tokenProgram: TOKEN_PROGRAM_ADDRESS });
+    pub.endpoints[e.id] = { address: owner, usdcAta };
+  }
+  fs.writeFileSync(PUBLIC_FILE, JSON.stringify(pub, null, 2) + "\n");
+  console.log(`Wrote ${ENDPOINTS.length} endpoint wallets to wallets.json`);
 }
-fs.writeFileSync(PUBLIC_FILE, JSON.stringify(pub, null, 2) + "\n");
-console.log(`Wrote ${ENDPOINTS.length} endpoint wallets to wallets.json`);
 
 // ---------- 3. create missing USDC accounts ----------
 
@@ -104,6 +127,10 @@ if (!todo.length) {
 }
 console.log(`Need to create ${todo.length} USDC account(s).`);
 
+if (!process.env.SETUP_PAYER_SECRET_KEY && !secrets) {
+  console.error("Accounts-only mode needs a payer: set SETUP_PAYER_SECRET_KEY to a devnet wallet with ~0.03 SOL.");
+  process.exit(1);
+}
 const payer = process.env.SETUP_PAYER_SECRET_KEY
   ? await createKeyPairSignerFromBytes(parseSecret(process.env.SETUP_PAYER_SECRET_KEY))
   : await signerOf(secrets.payer);

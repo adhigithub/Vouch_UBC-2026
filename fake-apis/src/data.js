@@ -54,14 +54,44 @@ export function otherCity(city) {
 
 // ---------- tiny TTL cache + fetch with timeout ----------
 
-const cache = new Map();
+// Simulated fallback values are only a guess (e.g. 74°F for Austin when it is
+// really 52°F), and a buyer's "makes sense" check will rightly reject them.
+// So a GOOD endpoint must avoid serving them whenever it can:
+//   - if the upstream fails but we have a recent real value, serve that instead
+//   - a simulated value is only cached briefly, so we retry the upstream soon
+//   - concurrent requests for the same key share one upstream call, so a burst
+//     of buyers doesn't trigger the upstream's rate limit in the first place
+
+const cache = new Map();    // key -> { at, value, ttlMs }
+const lastReal = new Map(); // key -> { at, value }  most recent non-simulated value
+const inFlight = new Map(); // key -> Promise
+const SIMULATED_TTL_MS = 15_000;
+const STALE_REAL_MAX_MS = 60 * 60_000;
+
+const isSimulated = (v) =>
+  v?.source === "simulated" || Object.values(v || {}).some((x) => x?.source === "simulated");
 
 async function cached(key, ttlMs, fn) {
   const hit = cache.get(key);
-  if (hit && Date.now() - hit.at < ttlMs) return hit.value;
-  const value = await fn();
-  cache.set(key, { at: Date.now(), value });
-  return value;
+  if (hit && Date.now() - hit.at < hit.ttlMs) return hit.value;
+  if (inFlight.has(key)) return inFlight.get(key);
+
+  const p = (async () => {
+    let value = await fn();
+    let ttl = ttlMs;
+    if (isSimulated(value)) {
+      const real = lastReal.get(key);
+      if (real && Date.now() - real.at < STALE_REAL_MAX_MS) value = real.value;
+      ttl = SIMULATED_TTL_MS;
+    } else {
+      lastReal.set(key, { at: Date.now(), value });
+    }
+    cache.set(key, { at: Date.now(), value, ttlMs: ttl });
+    return value;
+  })().finally(() => inFlight.delete(key));
+
+  inFlight.set(key, p);
+  return p;
 }
 
 async function getJson(url, timeoutMs = 2000) {
@@ -188,4 +218,22 @@ export async function cryptoPrice(symbol) {
     observedAt: new Date().toISOString(),
     source: p.source,
   };
+}
+
+// ---------- warm-up ----------
+
+/**
+ * Fetch real data for every city and symbol once at startup, so the first
+ * buyer never hits a cold upstream connection (which can exceed the timeout
+ * and fall back to simulated values). Returns how many came back real.
+ */
+export async function warmUp() {
+  // One at a time: a burst of parallel cold requests is exactly what times out.
+  const jobs = [
+    () => allPrices(),
+    ...Object.values(CITIES).flatMap((c) => [() => currentWeather(c), () => forecast(c)]),
+  ];
+  let real = 0;
+  for (const job of jobs) if (!isSimulated(await job())) real++;
+  return { real, total: jobs.length };
 }

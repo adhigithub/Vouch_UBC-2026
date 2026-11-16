@@ -11,12 +11,12 @@ import { HTTPFacilitatorClient } from "@x402/core/server";
 import { ExactSvmScheme } from "@x402/svm/exact/server";
 import { ENDPOINTS, MODES, TASKS, pathFor } from "./src/catalog.js";
 import { makeHandler } from "./src/handlers.js";
-import { SUPPORTED_CITIES, SUPPORTED_SYMBOLS } from "./src/data.js";
+import { SUPPORTED_CITIES, SUPPORTED_SYMBOLS, warmUp } from "./src/data.js";
 
 const PORT = Number(process.env.PORT || 3001);
 const PUBLIC_URL = (process.env.PUBLIC_URL || `http://localhost:${PORT}`).replace(/\/+$/, "");
 const PAYMENTS = (process.env.PAYMENTS || "on").toLowerCase() !== "off";
-const FACILITATOR_URL = process.env.FACILITATOR_URL || "https://x402.org/facilitator";
+const FACILITATOR_URL = process.env.FACILITATOR_URL || "https://facilitator.payai.network";
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN || "";
 const SOLANA_DEVNET = "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1";
 const WALLETS_FILE = new URL("./wallets.json", import.meta.url);
@@ -166,4 +166,5 @@ app.use((err, req, res, next) => {
 app.listen(PORT, () => {
   console.log(`Vouch fake APIs on ${PUBLIC_URL}  (payments: ${PAYMENTS ? "ON, " + FACILITATOR_URL : "OFF"})`);
   for (const e of ENDPOINTS) console.log(`  ${e.price.padEnd(6)} ${PUBLIC_URL}${pathFor(e.id)}`);
+  warmUp().then(({ real, total }) => console.log(`Warm-up: ${real}/${total} data sources returned real data`));
 });
