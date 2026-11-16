@@ -1,0 +1,43 @@
+{
+  "network": "solana-devnet",
+  "usdcMint": "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
+  "testBuyer": "CFzGu1bmKqtyVuuVfZwLE7ioQVngKKU7Lh2TFXabBC88",
+  "endpoints": {
+    "weather-api-1/current": {
+      "address": "GTtYxuMqU4sYY5YCPSsd92LQJSf1qtWdMbH9Xaz8NXTL",
+      "usdcAta": "A2cc2VHmBQfG8vAcyqoAGTv4vzitefWtdVMXe6w43dd1"
+    },
+    "weather-api-1/forecast": {
+      "address": "8gX4GSt833T5a3DJn7buZg7B7qL42TtV8XdxGWEBD5EL",
+      "usdcAta": "BsVoMQq2Tyo6fkYgJmxo6xEY3qseoEKJSCzzaBHeZLD9"
+    },
+    "weather-api-2/current": {
+      "address": "8vRvFh4QLFDNUBXCDTFoDP83d2boik49Z9oitbyoB8wK",
+      "usdcAta": "6jjvvny4oA1oqzfPXpwmvMUrN42DF6k5jTddy6bYP6og"
+    },
+    "weather-api-3/current": {
+      "address": "ALfnUtgmZa85qVhkGYYegvgDwdUz72pCrhh2S5vsdC6D",
+      "usdcAta": "AZCTBWo2bYUq8pbBgBa8Hfhh5qS4F9Zb6QhSfYu8UGxn"
+    },
+    "weather-api-4/current": {
+      "address": "BBTmvGQFnE6bTFdZmtFpTXXdyjrDoH7mnKV3XXaShDwU",
+      "usdcAta": "8z18vv3vDzXPVxsTguwQVyKEBTc8PvAUhQgQDS1tKwau"
+    },
+    "crypto-api-1/price": {
+      "address": "nesbjtCyaTZbaj8neyZAnc4gHasXtupxwgQG5JdeifZ",
+      "usdcAta": "CebG8dFeZPY1vRnkdUjUUM8AsRp1qE3Hb7YNgZWDiooD"
+    },
+    "crypto-api-2/price": {
+      "address": "D2EwMGVDsCSDHDdKKXaWQWmsUjnzgwu1UqYd3H699vrq",
+      "usdcAta": "EQEfBFzHAP4uw18y62t2Ga652YpWgorG9W3nJ2wjYGjt"
+    },
+    "crypto-api-3/price": {
+      "address": "7ioagZfQmSoZrGpvjNR1wP3SjJLHz17qmiYdtvCWm8Fj",
+      "usdcAta": "5SMntp4Z7yGELLPENg9w51dRCkZcv8sJ5dEy7fBQGmpj"
+    },
+    "crypto-api-4/price": {
+      "address": "5RPzgeqNMgoC38G4hhsznm3gmo9eJfd1AEN7hdr68noy",
+      "usdcAta": "8ouGs43mBzZgKwnWJocKbbDe17PQuXQv4k7E2uPs6SmE"
+    }
+  }
+}

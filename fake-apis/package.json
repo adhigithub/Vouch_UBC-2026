@@ -1,16 +1,30 @@
 {
   "name": "fake-apis",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "Practice x402 endpoints on Solana devnet (good and junk) for Vouch",
+  "main": "server.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "start:free": "node -e \"process.env.PAYMENTS='off';import('./server.js')\"",
+    "setup": "node scripts/setup-wallets.js",
+    "buy": "node scripts/buy.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "type": "commonjs",
+  "type": "module",
   "dependencies": {
+    "@solana-program/token": "^0.16.1",
+    "@solana/kit": "^8.6.0",
+    "@x402/core": "^2.31.0",
+    "@x402/express": "^2.31.0",
+    "@x402/fetch": "^2.31.0",
+    "@x402/svm": "^2.31.0",
+    "dotenv": "^18.0.10",
     "express": "^5.3.0"
+  },
+  "engines": {
+    "node": ">=20"
   }
 }
