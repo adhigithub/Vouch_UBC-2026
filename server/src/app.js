@@ -17,6 +17,7 @@ import {
 import { scoreEndpoints } from "./scoring.js";
 import { ratingMessage, reviewMessage, verifyWalletSignature } from "./signatures.js";
 import { stampRating } from "./stamp.js";
+import { verifyQuickNodeSignature } from "./quicknode-signature.js";
 
 const USDC_DECIMALS = 6;
 
@@ -30,12 +31,14 @@ function sameSecret(given, expected) {
 /**
  * @param {object} deps
  * @param {import("node:sqlite").DatabaseSync} deps.db
- * @param {object} deps.config  { webhookSecret, adminToken, defaultTestScore, usdcMint }
+ * @param {object} deps.config  { qnStreamSecret, webhookSecret, adminToken, defaultTestScore, usdcMint }
  * @param {(msg:string)=>void} [deps.log]
  */
 export function createApp({ db, config, log = console.log }) {
   const app = express();
-  app.use(express.json({ limit: "1mb" }));
+  // The webhook reads its own raw body (for the QuickNode signature), so skip it here.
+  const json = express.json({ limit: "1mb" });
+  app.use((req, res, next) => (req.path === "/webhook/quicknode" ? next() : json(req, res, next)));
 
   const scores = () => scoreEndpoints(db, { defaultTestScore: config.defaultTestScore });
   const fail = (res, status, error, extra = {}) => res.status(status).json({ error, ...extra });
@@ -101,11 +104,29 @@ export function createApp({ db, config, log = console.log }) {
 
   // ---------- QuickNode webhook ----------
 
-  app.post("/webhook/quicknode", (req, res) => {
-    if (!config.webhookSecret) return fail(res, 503, "webhook_secret_not_configured");
-    if (!sameSecret(req.get("x-vouch-webhook-secret"), config.webhookSecret)) return fail(res, 401, "bad_webhook_secret");
+  // Two ways to prove a delivery is genuine:
+  //   1. the real QuickNode Stream signs it: X-QN-Signature over the raw body, keyed
+  //      with the Stream's security token (QN_STREAM_SECRET)
+  //   2. our stand-in (scripts/simulate-stream.js) sends WEBHOOK_SECRET in a header
+  // The raw body is read here (not by express.json) because the signature covers
+  // the exact bytes QuickNode sent. express.raw also un-gzips compressed deliveries.
+  app.post("/webhook/quicknode", express.raw({ type: () => true, limit: "5mb" }), (req, res) => {
+    if (!config.qnStreamSecret && !config.webhookSecret) return fail(res, 503, "webhook_secret_not_configured");
+    const raw = Buffer.isBuffer(req.body) ? req.body.toString("utf8") : "";
 
-    const body = req.body;
+    if (req.get("x-qn-signature")) {
+      const check = verifyQuickNodeSignature(req.headers, raw, config.qnStreamSecret);
+      if (!check.ok) return fail(res, 401, "bad_quicknode_signature", { reason: check.reason });
+    } else if (!config.webhookSecret || !sameSecret(req.get("x-vouch-webhook-secret"), config.webhookSecret)) {
+      return fail(res, 401, "bad_webhook_secret");
+    }
+
+    let body;
+    try {
+      body = raw ? JSON.parse(raw) : null;
+    } catch {
+      return fail(res, 400, "invalid_json");
+    }
     const list = Array.isArray(body) ? body : Array.isArray(body?.payments) ? body.payments : body ? [body] : [];
     const ourAccounts = new Set(listEndpoints(db).map((e) => e.pay_to_ata).filter(Boolean));
 

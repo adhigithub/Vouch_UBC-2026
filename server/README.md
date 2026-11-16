@@ -7,7 +7,7 @@ The brain in the middle: recommends trusted endpoints, verifies payments reporte
 ```bash
 cd server
 npm install
-cp .env.example .env      # then set WEBHOOK_SECRET and ADMIN_TOKEN to long random strings
+cp .env.example .env      # set QN_STREAM_SECRET (the Stream's security token) and ADMIN_TOKEN
 npm start                 # http://localhost:4000 (loads endpoints from the fake APIs' /catalog)
 npm test                  # scoring rules + every scam the server must block
 ```
@@ -29,7 +29,7 @@ Point the agent at the server with `VOUCH_URL=http://localhost:4000` (in `agent/
 | `GET /scores` | Every endpoint with score, label and parts `{T, A, H, R}` |
 | `GET /endpoints/:api/:name` | One endpoint plus its recent ratings and reviews |
 | `GET /payments` | Recent verified payments (live feed) |
-| `POST /webhook/quicknode` | Verified payments from QuickNode. Needs header `x-vouch-webhook-secret` |
+| `POST /webhook/quicknode` | Verified payments from QuickNode. Must be signed by our Stream (`X-QN-Signature`), or carry `x-vouch-webhook-secret` (the stand-in) |
 | `POST /rate` | Agent rating: `{ endpointId, paymentId, rating, reason, rater, signature }` |
 | `POST /review` | Human review: `{ endpointId, paymentId, stars, comment, source, reviewer, signature }` |
 | `POST /admin/test-score` | Set an endpoint's test score T. Needs header `x-admin-token` |
@@ -59,5 +59,6 @@ The signed text is built by `ratingMessage()` / `reviewMessage()` in `src/signat
 
 ## Swapping in the real pieces
 
-- **QuickNode Stream**: send the payload in `PROJECT_STATUS.md` §5 to `/webhook/quicknode`. `src/parse-payment.js` is the reference for how to read a payment out of a transaction (the payer is the transfer authority, not the fee payer).
+- **QuickNode Stream** (`stream/` on the `quicknode-stream` branch): point the Stream's webhook at `https://<server>/webhook/quicknode` and put its security token in `QN_STREAM_SECRET`. The server checks QuickNode's HMAC signature over the raw body (`src/quicknode-signature.js`), un-gzips if needed, and de-duplicates by `paymentId`. The server must be reachable from the internet (e.g. `ngrok http 4000`).
+  Quick test without QuickNode: `cd stream && npm run send-sample -- http://localhost:4000/webhook/quicknode` (same token in `stream/.env`).
 - **Solana program**: `src/stamp.js` is the only place ratings are saved. Add the on-chain `submit_rating` call there.
