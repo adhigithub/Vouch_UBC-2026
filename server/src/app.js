@@ -18,8 +18,11 @@ import { scoreEndpoints } from "./scoring.js";
 import { ratingMessage, reviewMessage, verifyWalletSignature } from "./signatures.js";
 import { stampRating } from "./stamp.js";
 import { verifyQuickNodeSignature } from "./quicknode-signature.js";
+import { explorerAddress, explorerTx } from "./solana.js";
 
 const USDC_DECIMALS = 6;
+// A real Solana transaction signature (not "already-recorded" / "skipped:...").
+const isTxSig = (s) => typeof s === "string" && /^[1-9A-HJ-NP-Za-km-z]{80,90}$/.test(s);
 
 /** Constant-time string compare, so the secret can't be guessed by timing responses. */
 function sameSecret(given, expected) {
@@ -33,8 +36,9 @@ function sameSecret(given, expected) {
  * @param {import("node:sqlite").DatabaseSync} deps.db
  * @param {object} deps.config  { qnStreamSecret, webhookSecret, adminToken, defaultTestScore, usdcMint }
  * @param {(msg:string)=>void} [deps.log]
+ * @param {ReturnType<import("./solana.js").createChain> | null} [deps.chain]  Solana program client (null = database only)
  */
-export function createApp({ db, config, log = console.log }) {
+export function createApp({ db, config, log = console.log, chain = null }) {
   const app = express();
   // The webhook reads its own raw body (for the QuickNode signature), so skip it here.
   const json = express.json({ limit: "1mb" });
@@ -82,9 +86,23 @@ export function createApp({ db, config, log = console.log }) {
     const id = `${req.params.api}/${req.params.name}`;
     const s = scores().find((x) => x.endpointId === id);
     if (!s) return fail(res, 404, "unknown_endpoint");
-    const recentRatings = db.prepare("SELECT payment_id AS paymentId, rater, rating, reason, created_at AS at FROM ratings WHERE endpoint_id = ? ORDER BY id DESC LIMIT 20").all(id);
+    const recentRatings = db.prepare("SELECT payment_id AS paymentId, rater, rating, reason, created_at AS at, onchain_tx AS onchainTx FROM ratings WHERE endpoint_id = ? ORDER BY id DESC LIMIT 20").all(id)
+      .map((r) => ({ ...r, explorer: isTxSig(r.onchainTx) ? explorerTx(r.onchainTx) : null }));
     const recentReviews = db.prepare("SELECT payment_id AS paymentId, reviewer, stars, comment, source, created_at AS at FROM reviews WHERE endpoint_id = ? ORDER BY id DESC LIMIT 20").all(id);
     res.json({ ...s, recentRatings, recentReviews });
+  });
+
+  // Where the on-chain copy of the ratings lives.
+  app.get("/chain", async (req, res) => {
+    if (!chain) return res.json({ enabled: false });
+    const pending = db.prepare("SELECT COUNT(*) AS n FROM ratings WHERE onchain_tx IS NULL").get().n;
+    res.json({
+      enabled: true,
+      programId: chain.programId,
+      authority: chain.authority,
+      program: explorerAddress(chain.programId),
+      pendingRatings: pending,
+    });
   });
 
   app.get("/payments", (req, res) => {
@@ -159,15 +177,17 @@ export function createApp({ db, config, log = console.log }) {
     if (!ok?.endpoint) return; // checkPayment already replied
     if (ratingForPayment(db, paymentId)) return fail(res, 409, "payment_already_used");
 
+    let onchain;
     try {
-      await stampRating(db, { endpointId, paymentId, rater, rating, reason });
+      onchain = await stampRating(db, { endpointId, paymentId, rater, rating, reason, amountRaw: ok.payment.amount_raw }, chain);
     } catch (err) {
       if (/UNIQUE/.test(err.message)) return fail(res, 409, "payment_already_used"); // lost a race
       throw err;
     }
     const s = scores().find((x) => x.endpointId === endpointId);
-    log(`[rating] ${endpointId} ${rating}${reason ? ` (${reason})` : ""} -> score ${s.score} ${s.label}`);
-    res.json({ status: "stamped", endpointId, score: s.score, label: s.label });
+    const tx = isTxSig(onchain.onchainTx) ? onchain.onchainTx : null;
+    log(`[rating] ${endpointId} ${rating}${reason ? ` (${reason})` : ""} -> score ${s.score} ${s.label}${tx ? `  on-chain ${tx.slice(0, 12)}...` : onchain.onchainError ? `  (on-chain pending: ${onchain.onchainError.slice(0, 60)})` : ""}`);
+    res.json({ status: "stamped", endpointId, score: s.score, label: s.label, onchainTx: tx, explorer: tx ? explorerTx(tx) : null });
   });
 
   app.post("/review", (req, res) => {

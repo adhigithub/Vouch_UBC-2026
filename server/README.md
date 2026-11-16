@@ -29,6 +29,7 @@ Point the agent at the server with `VOUCH_URL=http://localhost:4000` (in `agent/
 | `GET /scores` | Every endpoint with score, label and parts `{T, A, H, R}` |
 | `GET /endpoints/:api/:name` | One endpoint plus its recent ratings and reviews |
 | `GET /payments` | Recent verified payments (live feed) |
+| `GET /chain` | Solana program ID, server key, explorer link, ratings not yet on-chain |
 | `POST /webhook/quicknode` | Verified payments from QuickNode. Must be signed by our Stream (`X-QN-Signature`), or carry `x-vouch-webhook-secret` (the stand-in) |
 | `POST /rate` | Agent rating: `{ endpointId, paymentId, rating, reason, rater, signature }` |
 | `POST /review` | Human review: `{ endpointId, paymentId, stars, comment, source, reviewer, signature }` |
@@ -61,4 +62,4 @@ The signed text is built by `ratingMessage()` / `reviewMessage()` in `src/signat
 
 - **QuickNode Stream** (`stream/` on the `quicknode-stream` branch): point the Stream's webhook at `https://<server>/webhook/quicknode` and put its security token in `QN_STREAM_SECRET`. The server checks QuickNode's HMAC signature over the raw body (`src/quicknode-signature.js`), un-gzips if needed, and de-duplicates by `paymentId`. The server must be reachable from the internet (e.g. `ngrok http 4000`).
   Quick test without QuickNode: `cd stream && npm run send-sample -- http://localhost:4000/webhook/quicknode` (same token in `stream/.env`).
-- **Solana program**: `src/stamp.js` is the only place ratings are saved. Add the on-chain `submit_rating` call there.
+- **Solana program** (`program/`, ID `GyYPjRNghiX96xFtP98eNMiYjKfrF5ktKLf1Mm2YBgni`): every accepted rating is also written on-chain by `src/stamp.js` → `src/solana.js`. The `/rate` reply includes `onchainTx` and an explorer link. If Solana is slow or down the rating still counts and is retried every minute. First-time setup: `npm run chain:setup` (creates `SOLANA_SERVER_SECRET_KEY` in `.env`, the only key the program accepts, and runs `initialize`). `GET /chain` shows the program, the server key and how many ratings are still pending.

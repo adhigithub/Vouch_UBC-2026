@@ -4,6 +4,8 @@ import "dotenv/config";
 import { openDb } from "./src/db.js";
 import { createApp } from "./src/app.js";
 import { syncCatalog } from "./src/catalog.js";
+import { createChain, DEFAULT_PROGRAM_ID } from "./src/solana.js";
+import { retryPendingOnChain } from "./src/stamp.js";
 
 const config = {
   port: Number(process.env.PORT || 4000),
@@ -21,7 +23,28 @@ if (!config.qnStreamSecret && !config.webhookSecret) {
 }
 
 const db = openDb(config.dbFile);
-const app = createApp({ db, config });
+
+// Solana program (optional: without a server key, ratings stay in the database only).
+let chain = null;
+if (process.env.SOLANA_SERVER_SECRET_KEY) {
+  chain = createChain({
+    rpcUrl: process.env.SOLANA_RPC_URL || "https://api.devnet.solana.com",
+    programId: process.env.VOUCH_PROGRAM_ID || DEFAULT_PROGRAM_ID,
+    secretKey: JSON.parse(process.env.SOLANA_SERVER_SECRET_KEY),
+  });
+  const owner = await chain.configAuthority().catch(() => undefined);
+  if (owner === null) console.warn("WARNING: the Vouch program isn't set up yet. Run: npm run chain:setup");
+  else if (owner && owner !== chain.authority) console.warn(`WARNING: the program only accepts ratings from ${owner}, not this server's key ${chain.authority}.`);
+  else if (owner) console.log(`Solana: writing ratings to program ${chain.programId} as ${chain.authority}`);
+  // Catch up on ratings that didn't reach Solana (network hiccups, restarts).
+  const catchUp = () => retryPendingOnChain(db, chain).catch((e) => console.warn(`[chain] retry failed: ${e.message}`));
+  setTimeout(catchUp, 5_000).unref();
+  setInterval(catchUp, 60_000).unref();
+} else {
+  console.warn("Solana: SOLANA_SERVER_SECRET_KEY not set, ratings are saved in the database only. Run: npm run chain:setup");
+}
+
+const app = createApp({ db, config, chain });
 
 // Keep the endpoint list in sync with the fake APIs (they may start after us).
 async function refreshCatalog() {

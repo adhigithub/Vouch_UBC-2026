@@ -68,6 +68,10 @@ export function openDb(file = ":memory:") {
       updated_at   TEXT NOT NULL
     );
   `);
+  // Added with the Solana program: where each rating's on-chain copy is.
+  const ratingCols = db.prepare("PRAGMA table_info(ratings)").all().map((c) => c.name);
+  if (!ratingCols.includes("onchain_tx")) db.exec("ALTER TABLE ratings ADD COLUMN onchain_tx TEXT");       // tx signature once written
+  if (!ratingCols.includes("onchain_error")) db.exec("ALTER TABLE ratings ADD COLUMN onchain_error TEXT"); // last failure, retried later
   return db;
 }
 
@@ -113,6 +117,16 @@ export function insertRating(db, r) {
   db.prepare(`INSERT INTO ratings (endpoint_id, payment_id, rater, rating, reason, created_at) VALUES (?, ?, ?, ?, ?, ?)`)
     .run(r.endpointId, r.paymentId, r.rater, r.rating, r.reason ?? null, now());
 }
+export function markRatingOnChain(db, paymentId, { tx = null, error = null }) {
+  db.prepare("UPDATE ratings SET onchain_tx = COALESCE(onchain_tx, ?), onchain_error = ? WHERE payment_id = ?").run(tx, error, paymentId);
+}
+
+/** Ratings not yet on-chain (Solana was down, or the server restarted mid-write). */
+// Only ratings older than `minAgeMs`, so we don't race the /rate request that is writing it right now.
+export const ratingsPendingOnChain = (db, { minAgeMs = 30_000, limit = 20 } = {}) =>
+  db.prepare("SELECT r.*, p.amount_raw FROM ratings r LEFT JOIN payments p ON p.payment_id = r.payment_id WHERE r.onchain_tx IS NULL AND r.created_at < ? ORDER BY r.id LIMIT ?")
+    .all(new Date(Date.now() - minAgeMs).toISOString(), limit);
+
 export const ratingForPayment = (db, paymentId) => db.prepare("SELECT * FROM ratings WHERE payment_id = ?").get(paymentId);
 
 export function insertReview(db, r) {
