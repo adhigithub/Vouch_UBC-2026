@@ -94,10 +94,18 @@ async function cached(key, ttlMs, fn) {
   return p;
 }
 
-async function getJson(url, timeoutMs = 2000) {
-  const res = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
-  if (!res.ok) throw new Error(`${url} -> HTTP ${res.status}`);
-  return res.json();
+// Upstreams usually answer in ~0.2s but occasionally stall past the timeout,
+// so try once more before falling back to simulated values.
+async function getJson(url, timeoutMs = 2000, attempts = 2) {
+  for (let i = 1; ; i++) {
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
+      if (!res.ok) throw new Error(`${url} -> HTTP ${res.status}`);
+      return await res.json();
+    } catch (err) {
+      if (i >= attempts) throw err;
+    }
+  }
 }
 
 // Deterministic pseudo-random in [0,1) from a string, so fallbacks are stable.
