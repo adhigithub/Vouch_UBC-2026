@@ -1,5 +1,5 @@
 // Loads the agent's wallet from .env and sets up x402 payments with it.
-import { createKeyPairSignerFromBytes } from "@solana/kit";
+import { createKeyPairSignerFromBytes, getBase58Decoder, signBytes } from "@solana/kit";
 import { wrapFetchWithPayment, x402Client, decodePaymentResponseHeader } from "@x402/fetch";
 import { ExactSvmScheme } from "@x402/svm/exact/client";
 import { PAYMENTS, SOLANA_RPC_URL } from "./config.js";
@@ -11,6 +11,15 @@ function secretKeyBytes() {
 }
 
 export const signer = await createKeyPairSignerFromBytes(secretKeyBytes());
+
+/**
+ * Sign a text message with the wallet's secret key (base58 signature).
+ * Vouch uses this to prove a rating comes from the wallet that paid.
+ */
+export async function signText(text) {
+  const sig = await signBytes(signer.keyPair.privateKey, new TextEncoder().encode(text));
+  return getBase58Decoder().decode(sig);
+}
 
 // Pays automatically when an endpoint answers "402 Payment Required".
 const client = new x402Client().register("solana:*", new ExactSvmScheme(signer, { rpcUrl: SOLANA_RPC_URL }));
