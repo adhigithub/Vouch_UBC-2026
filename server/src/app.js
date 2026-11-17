@@ -19,6 +19,7 @@ import { ratingMessage, reviewMessage, verifyWalletSignature } from "./signature
 import { stampRating } from "./stamp.js";
 import { verifyQuickNodeSignature } from "./quicknode-signature.js";
 import { explorerAddress, explorerTx } from "./solana.js";
+import { renderGrokPage } from "./grok.js";
 
 const USDC_DECIMALS = 6;
 // A real Solana transaction signature (not "already-recorded" / "skipped:...").
@@ -105,6 +106,24 @@ export function createApp({ db, config, log = console.log, chain = null }) {
     });
   });
 
+  // Plain-text summary for Grok Bot on X (and other AI assistants) to read. See src/grok.js.
+  app.get("/grok", (req, res) => {
+    const baseUrl = `${req.get("x-forwarded-proto") || req.protocol}://${req.get("host")}`;
+    const byAta = Object.fromEntries(listEndpoints(db).map((e) => [e.pay_to_ata, e.id]));
+    const ratings = db.prepare("SELECT endpoint_id AS endpointId, rating, reason, rater, created_at AS at, onchain_tx AS onchainTx FROM ratings ORDER BY id DESC LIMIT 50").all()
+      .map((r) => ({ ...r, explorer: isTxSig(r.onchainTx) ? explorerTx(r.onchainTx) : null }));
+    const payments = db.prepare("SELECT * FROM payments ORDER BY received_at DESC LIMIT 10").all()
+      .map((p) => ({ endpointId: byAta[p.to_token_account] ?? null, amount: Number(p.amount_raw) / 10 ** USDC_DECIMALS, from: p.from_wallet, receivedAt: p.received_at, source: p.source }));
+    const page = renderGrokPage({
+      scores: scores(),
+      ratings,
+      payments,
+      chain: chain ? { programId: chain.programId, program: explorerAddress(chain.programId) } : null,
+      baseUrl,
+    });
+    res.set("cache-control", "no-store").type("text/plain; charset=utf-8").send(page);
+  });
+
   app.get("/payments", (req, res) => {
     const limit = Math.min(Number(req.query.limit) || 50, 200);
     const byAta = Object.fromEntries(listEndpoints(db).map((e) => [e.pay_to_ata, e.id]));
@@ -116,6 +135,7 @@ export function createApp({ db, config, log = console.log, chain = null }) {
       amount: Number(p.amount_raw) / 10 ** USDC_DECIMALS,
       blockTime: p.block_time,
       receivedAt: p.received_at,
+      source: p.source ?? null, // "quicknode" = confirmed by the QuickNode Stream
       rated: !!ratingForPayment(db, p.payment_id),
     })));
   });
@@ -163,7 +183,7 @@ export function createApp({ db, config, log = console.log, chain = null }) {
         ignored++;
         continue;
       }
-      if (insertPayment(db, p)) {
+      if (insertPayment(db, p, source)) {
         accepted++;
         log(`[payment] ${p.paymentId.slice(0, 12)}... ${Number(p.amountRaw) / 1e6} USDC from ${p.from.slice(0, 6)}... verified (via ${source})`);
       } else duplicates++;

@@ -93,6 +93,8 @@ test("webhook: accepts deliveries signed by our QuickNode Stream (X-QN-Signature
   const res = await fetch(base + "/webhook/quicknode", { method: "POST", headers: { "content-type": "application/json", ...signLikeQuickNode(raw, QN_TOKEN) }, body: raw });
   assert.equal(res.status, 200);
   assert.equal((await res.json()).accepted, 1);
+  const stored = (await get("/payments")).find((p) => p.paymentId === "p-qn-1");
+  assert.equal(stored.source, "quicknode"); // remembered who confirmed it
 });
 
 test("webhook: gzip-compressed QuickNode deliveries work too", async () => {
@@ -205,6 +207,16 @@ test("scores: every endpoint with its parts", async () => {
   const good = all.find((e) => e.endpointId === "weather-good/current");
   assert.equal(good.ratings, 1);
   assert.ok("T" in good.parts && "A" in good.parts);
+});
+
+test("grok: plain-text page with live scores for Grok Bot", async () => {
+  const res = await fetch(base + "/grok");
+  assert.equal(res.status, 200);
+  assert.match(res.headers.get("content-type"), /text\/plain/);
+  const text = await res.text();
+  assert.match(text, /VOUCH: live trust scores/);
+  assert.match(text, /weather-junk\/current: score \d+\. 1 agent rating\(s\) were bad/); // warned, from the real rating above
+  assert.match(text, /Weather: use weather-good\/current/);
 });
 
 // ---------- /review ----------

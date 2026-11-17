@@ -72,6 +72,9 @@ export function openDb(file = ":memory:") {
   const ratingCols = db.prepare("PRAGMA table_info(ratings)").all().map((c) => c.name);
   if (!ratingCols.includes("onchain_tx")) db.exec("ALTER TABLE ratings ADD COLUMN onchain_tx TEXT");       // tx signature once written
   if (!ratingCols.includes("onchain_error")) db.exec("ALTER TABLE ratings ADD COLUMN onchain_error TEXT"); // last failure, retried later
+  // Who confirmed each payment: "quicknode" (the real Stream) or "stand-in" (scripts/simulate-stream.js).
+  const paymentCols = db.prepare("PRAGMA table_info(payments)").all().map((c) => c.name);
+  if (!paymentCols.includes("source")) db.exec("ALTER TABLE payments ADD COLUMN source TEXT");
   return db;
 }
 
@@ -98,14 +101,14 @@ export const listEndpoints = (db) => db.prepare("SELECT * FROM endpoints ORDER B
 // ---------- payments ----------
 
 /** Returns true if the payment was new, false if we already had it. */
-export function insertPayment(db, p) {
+export function insertPayment(db, p, source = null) {
   const r = db
     .prepare(`
       INSERT OR IGNORE INTO payments
-        (payment_id, from_wallet, from_token_account, to_wallet, to_token_account, mint, amount_raw, slot, block_time, received_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (payment_id, from_wallet, from_token_account, to_wallet, to_token_account, mint, amount_raw, slot, block_time, received_at, source)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `)
-    .run(p.paymentId, p.from, p.fromTokenAccount ?? null, p.to ?? null, p.toTokenAccount, p.mint, String(p.amountRaw), p.slot ?? null, p.blockTime ?? null, now());
+    .run(p.paymentId, p.from, p.fromTokenAccount ?? null, p.to ?? null, p.toTokenAccount, p.mint, String(p.amountRaw), p.slot ?? null, p.blockTime ?? null, now(), source);
   return r.changes > 0;
 }
 
