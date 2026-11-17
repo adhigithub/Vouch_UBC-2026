@@ -108,13 +108,19 @@ test("webhook: gzip-compressed QuickNode deliveries work too", async () => {
 
 test("webhook: rejects a wrong QuickNode signature or a body changed after signing", async () => {
   const raw = JSON.stringify({ payments: [payment("p-qn-forged", "ATA_CRYPTO")] });
+  // Answered 200 (so QuickNode doesn't terminate the Stream) but nothing is stored.
   const forged = await fetch(base + "/webhook/quicknode", { method: "POST", headers: { "content-type": "application/json", ...signLikeQuickNode(raw, "not-our-token") }, body: raw });
-  assert.equal(forged.status, 401);
+  assert.equal((await forged.json()).accepted, 0);
 
   const tampered = raw.replace("10000", "99990000");
   const res = await fetch(base + "/webhook/quicknode", { method: "POST", headers: { "content-type": "application/json", ...signLikeQuickNode(raw, QN_TOKEN) }, body: tampered });
-  assert.equal(res.status, 401);
-  assert.equal((await res.json()).reason, "bad signature");
+  const body = await res.json();
+  assert.equal(body.accepted, 0);
+  assert.equal(body.reason, "bad signature");
+
+  // ...and the forged payment really wasn't stored: it can't be used to rate.
+  const payments = await get("/payments");
+  assert.ok(!payments.some((p) => p.paymentId === "p-qn-forged"));
 });
 
 // ---------- /rate: the scams ----------

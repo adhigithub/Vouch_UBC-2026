@@ -132,10 +132,18 @@ export function createApp({ db, config, log = console.log, chain = null }) {
     if (!config.qnStreamSecret && !config.webhookSecret) return fail(res, 503, "webhook_secret_not_configured");
     const raw = Buffer.isBuffer(req.body) ? req.body.toString("utf8") : "";
 
-    if (req.get("x-qn-signature")) {
+    const source = req.get("x-qn-signature") ? "quicknode" : "stand-in";
+    if (source === "quicknode") {
       const check = verifyQuickNodeSignature(req.headers, raw, config.qnStreamSecret);
-      if (!check.ok) return fail(res, 401, "bad_quicknode_signature", { reason: check.reason });
+      if (!check.ok) {
+        // Nothing from this delivery is stored. We still answer 200: QuickNode
+        // terminates a Stream after 3 failed deliveries, which would kill it while
+        // the token is being set up. Discarding is what keeps us safe, not the status code.
+        log(`[webhook] IGNORED delivery from ${source}: ${check.reason} (QN_STREAM_SECRET doesn't match this Stream's security token)`);
+        return res.json({ received: 0, accepted: 0, rejected: "bad_quicknode_signature", reason: check.reason });
+      }
     } else if (!config.webhookSecret || !sameSecret(req.get("x-vouch-webhook-secret"), config.webhookSecret)) {
+      log(`[webhook] REJECTED delivery without a valid signature or secret`);
       return fail(res, 401, "bad_webhook_secret");
     }
 
@@ -157,8 +165,16 @@ export function createApp({ db, config, log = console.log, chain = null }) {
       }
       if (insertPayment(db, p)) {
         accepted++;
-        log(`[payment] ${p.paymentId.slice(0, 12)}... ${Number(p.amountRaw) / 1e6} USDC from ${p.from.slice(0, 6)}... verified`);
+        log(`[payment] ${p.paymentId.slice(0, 12)}... ${Number(p.amountRaw) / 1e6} USDC from ${p.from.slice(0, 6)}... verified (via ${source})`);
       } else duplicates++;
+    }
+    if (!accepted) {
+      // Say what was ignored, so a missing/wrong Stream filter is easy to spot.
+      const first = list[0];
+      const shape = first && typeof first === "object" ? Object.keys(first).slice(0, 6).join(",") : typeof first;
+      const looksRaw = !Array.isArray(body?.payments) && !Array.isArray(body);
+      log(`[webhook] delivery from ${source}: ${list.length} item(s), ${duplicates} duplicate, ${ignored} ignored` +
+        (looksRaw ? ` -- not a {payments:[...]} body (keys: ${shape}). Is filter.js set on the Stream?` : ""));
     }
     res.json({ received: list.length, accepted, duplicates, ignored });
   });
