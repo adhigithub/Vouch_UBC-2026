@@ -15,6 +15,17 @@ const REASONS = {
 
 const TASK_NAMES = { weather: "Weather", "weather-forecast": "Weather forecasts", "crypto-price": "Crypto prices" };
 const SOURCES = { quicknode: "confirmed by QuickNode Stream", "stand-in": "confirmed by Vouch's Solana watcher" };
+const when = (iso) => `${iso.replace("T", " ").slice(0, 16)} UTC`;
+
+// History causes are stored as short codes; say them in plain words.
+function describeCause(cause) {
+  const bad = cause.match(/^agent rated BAD \((\w+)\)$/);
+  if (bad) return `an agent rated it BAD: it ${REASONS[bad[1]] ?? "failed checks"}`;
+  if (cause === "agent rated GOOD") return "an agent rated it GOOD";
+  if (cause === "recalculated") return "recalculated (a buyer's other purchases changed how much their ratings count)";
+  return cause;
+}
+
 const short = (s) => (s && s.length > 12 ? `${s.slice(0, 4)}…${s.slice(-4)}` : s);
 const money = (n) => `$${Number(n).toFixed(2)}`;
 const LABEL = { trusted: "TRUSTED", avoid: "AVOID", unrated: "UNRATED" };
@@ -36,13 +47,14 @@ export function recommend(scores, task) {
 /**
  * @param {object} d
  * @param {object[]} d.scores         scoreEndpoints() output
+ * @param {object[]} [d.changes]      recentChanges() output, newest first: { endpointId, from, to, cause, proof, at }
  * @param {object[]} d.ratings        recent ratings, newest first: { endpointId, rating, reason, rater, at, explorer }
  * @param {object[]} d.payments       recent verified payments, newest first: { endpointId, amount, from, receivedAt, source }
  * @param {object|null} d.chain       { programId, program } or null
  * @param {string} d.baseUrl          public address of this server
  * @param {Date} [d.now]
  */
-export function renderGrokPage({ scores, ratings, payments, chain, baseUrl, now = new Date() }) {
+export function renderGrokPage({ scores, changes = [], ratings, payments, chain, baseUrl, now = new Date() }) {
   const out = [];
   const line = (s = "") => out.push(s);
   const tasks = [...new Set(scores.map((s) => s.task))].sort();
@@ -54,6 +66,27 @@ export function renderGrokPage({ scores, ratings, payments, chain, baseUrl, now 
   line("then rate what they got. A rating only counts if it is tied to a real payment, confirmed by a");
   line("QuickNode Stream watching Solana, and every rating is stored permanently on Solana.");
   if (chain?.programId) line(`On-chain record (Solana devnet program ${chain.programId}): ${chain.program}`);
+  line();
+
+  const avoidCount = scores.filter((s) => s.label === "avoid").length;
+  line(`STATUS: ${scores.length} APIs tracked, ${avoidCount} flagged AVOID. Last score change: ${changes[0] ? `${when(changes[0].at)} (${changes[0].endpointId})` : "none yet"}.`);
+  line();
+
+  line("FOR AI ASSISTANTS MONITORING THIS PAGE (e.g. a scheduled Grok task)");
+  line("- Compare RECENT CHANGES with the time of your last check. Report only changes newer than that.");
+  line("- Most important: an API that became AVOID. Tell the user which API, why, the Solana proof link,");
+  line("  and what to switch to (see RECOMMENDATIONS for its task).");
+  line("- If nothing changed since your last check, say so briefly.");
+  line();
+
+  line("RECENT CHANGES (newest first; every agent rating behind them is tied to a real Solana payment)");
+  if (!changes.length) line("- None yet.");
+  for (const c of changes) {
+    const from = c.from ? `${c.from.score} ${LABEL[c.from.label]}` : "new";
+    const flag = c.to.label === "avoid" && c.from?.label !== "avoid" ? "  <-- NOW AVOID" :
+      c.from?.label === "avoid" && c.to.label !== "avoid" ? "  <-- recovered" : "";
+    line(`- ${when(c.at)}  ${c.endpointId}: ${from} -> ${c.to.score} ${LABEL[c.to.label]}, ${describeCause(c.cause)}${flag}${c.proof ? `  proof: ${c.proof}` : ""}`);
+  }
   line();
 
   line("HOW TO READ THE SCORES");
@@ -81,9 +114,13 @@ export function renderGrokPage({ scores, ratings, payments, chain, baseUrl, now 
     const proof = bad.find((r) => r.explorer)?.explorer;
     if (!bad.length) {
       line(`- ${s.endpointId}: score ${s.score}. It failed Vouch's own tests (test score ${s.parts.T}).`);
-      continue;
+    } else {
+      line(`- ${s.endpointId}: score ${s.score}. ${bad.length} agent rating(s) were bad${why.length ? `: it ${why.join(" and ")}` : ""}.${proof ? ` Proof on Solana: ${proof}` : ""}`);
     }
-    line(`- ${s.endpointId}: score ${s.score}. ${bad.length} agent rating(s) were bad${why.length ? `: it ${why.join(" and ")}` : ""}.${proof ? ` Proof on Solana: ${proof}` : ""}`);
+    const alt = recommend(scores, s.task);
+    line(alt
+      ? `  What to do: if your agent uses it, switch to ${alt.endpointId} (score ${alt.score}, ${money(alt.price)} per call).`
+      : "  What to do: no safe alternative for this task right now; pause that part of your agent.");
   }
   line();
 

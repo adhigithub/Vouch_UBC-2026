@@ -86,27 +86,32 @@ export function raterWeight(distinctEndpointsPaid) {
   return distinctEndpointsPaid >= 2 ? 1 : 0.5;
 }
 
-/** Score every endpoint from what's in the database. */
-export function scoreEndpoints(db, { defaultTestScore }) {
+/**
+ * Score every endpoint from what's in the database.
+ * With `asOf` (ISO time), only ratings, reviews and payments up to that moment
+ * count: used to replay how scores changed over time.
+ */
+export function scoreEndpoints(db, { defaultTestScore, asOf = null }) {
+  const until = asOf ?? "9999";
   const endpoints = db.prepare("SELECT * FROM endpoints ORDER BY id").all();
   const testScores = Object.fromEntries(
     db.prepare("SELECT endpoint_id, score FROM test_scores").all().map((r) => [r.endpoint_id, r.score]),
   );
   // How many different endpoints each wallet has paid (for rater weight).
   const endpointsPaidBy = Object.fromEntries(
-    db.prepare("SELECT from_wallet, COUNT(DISTINCT to_token_account) AS n FROM payments GROUP BY from_wallet").all()
+    db.prepare("SELECT from_wallet, COUNT(DISTINCT to_token_account) AS n FROM payments WHERE received_at <= ? GROUP BY from_wallet").all(until)
       .map((r) => [r.from_wallet, r.n]),
   );
 
-  const ratingsStmt = db.prepare("SELECT rater, rating FROM ratings WHERE endpoint_id = ? ORDER BY id");
-  const reviewsStmt = db.prepare("SELECT stars FROM reviews WHERE endpoint_id = ? ORDER BY id");
-  const payersStmt = db.prepare("SELECT from_wallet, COUNT(*) AS n FROM payments WHERE to_token_account = ? GROUP BY from_wallet");
+  const ratingsStmt = db.prepare("SELECT rater, rating FROM ratings WHERE endpoint_id = ? AND created_at <= ? ORDER BY id");
+  const reviewsStmt = db.prepare("SELECT stars FROM reviews WHERE endpoint_id = ? AND created_at <= ? ORDER BY id");
+  const payersStmt = db.prepare("SELECT from_wallet, COUNT(*) AS n FROM payments WHERE to_token_account = ? AND received_at <= ? GROUP BY from_wallet");
 
   return endpoints.map((e) => {
-    const ratings = ratingsStmt.all(e.id).map((r) => ({ rating: r.rating, weight: raterWeight(endpointsPaidBy[r.rater] ?? 0) }));
-    const reviews = reviewsStmt.all(e.id);
+    const ratings = ratingsStmt.all(e.id, until).map((r) => ({ rating: r.rating, weight: raterWeight(endpointsPaidBy[r.rater] ?? 0) }));
+    const reviews = reviewsStmt.all(e.id, until);
     const paymentsByWallet = e.pay_to_ata
-      ? Object.fromEntries(payersStmt.all(e.pay_to_ata).map((r) => [r.from_wallet, r.n]))
+      ? Object.fromEntries(payersStmt.all(e.pay_to_ata, until).map((r) => [r.from_wallet, r.n]))
       : {};
     const T = testScores[e.id] ?? defaultTestScore;
     const result = computeScore({ T, ratings, reviews, paymentsByWallet });

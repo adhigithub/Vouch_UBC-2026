@@ -6,6 +6,7 @@ import { createApp } from "./src/app.js";
 import { syncCatalog } from "./src/catalog.js";
 import { createChain, DEFAULT_PROGRAM_ID } from "./src/solana.js";
 import { retryPendingOnChain } from "./src/stamp.js";
+import { backfillHistory, recordScoreChanges } from "./src/history.js";
 
 const config = {
   port: Number(process.env.PORT || 4000),
@@ -57,7 +58,13 @@ async function refreshCatalog() {
   }
 }
 const n = await refreshCatalog();
-setInterval(refreshCatalog, 60_000).unref();
+// Score history for /grok "recent changes": rebuild it from past ratings on first run,
+// then note any newly listed APIs after each catalog refresh.
+const replayed = backfillHistory(db, { defaultTestScore: config.defaultTestScore });
+if (replayed) console.log(`Score history: rebuilt ${replayed} entries from past ratings`);
+const noteNewApis = () => recordScoreChanges(db, { defaultTestScore: config.defaultTestScore, cause: "new API listed" });
+noteNewApis();
+setInterval(async () => { await refreshCatalog(); noteNewApis(); }, 60_000).unref();
 
 app.listen(config.port, () => {
   console.log(`Vouch server on http://localhost:${config.port}  (${n} endpoints loaded, db ${config.dbFile})`);

@@ -20,6 +20,7 @@ import { stampRating } from "./stamp.js";
 import { verifyQuickNodeSignature } from "./quicknode-signature.js";
 import { explorerAddress, explorerTx } from "./solana.js";
 import { renderGrokPage } from "./grok.js";
+import { recordScoreChanges, ratingCause, recentChanges } from "./history.js";
 
 const USDC_DECIMALS = 6;
 // A real Solana transaction signature (not "already-recorded" / "skipped:...").
@@ -47,6 +48,16 @@ export function createApp({ db, config, log = console.log, chain = null }) {
 
   const scores = () => scoreEndpoints(db, { defaultTestScore: config.defaultTestScore });
   const fail = (res, status, error, extra = {}) => res.status(status).json({ error, ...extra });
+  // Remember score changes (for /grok "recent changes"). Never let this break a request.
+  const noteChange = (opts) => {
+    try {
+      for (const c of recordScoreChanges(db, { defaultTestScore: config.defaultTestScore, ...opts })) {
+        if (c.from) log(`[score] ${c.endpointId}: ${c.from.score} ${c.from.label} -> ${c.to.score} ${c.to.label} (${c.cause})`);
+      }
+    } catch (err) {
+      log(`[score] could not record history: ${err.message}`);
+    }
+  };
 
   // Shared checks for /rate and /review: is this a real, verified payment to this endpoint, by this wallet?
   function checkPayment(req, res, { signer, message, signature }) {
@@ -116,6 +127,7 @@ export function createApp({ db, config, log = console.log, chain = null }) {
       .map((p) => ({ endpointId: byAta[p.to_token_account] ?? null, amount: Number(p.amount_raw) / 10 ** USDC_DECIMALS, from: p.from_wallet, receivedAt: p.received_at, source: p.source }));
     const page = renderGrokPage({
       scores: scores(),
+      changes: recentChanges(db),
       ratings,
       payments,
       chain: chain ? { programId: chain.programId, program: explorerAddress(chain.programId) } : null,
@@ -222,6 +234,7 @@ export function createApp({ db, config, log = console.log, chain = null }) {
     }
     const s = scores().find((x) => x.endpointId === endpointId);
     const tx = isTxSig(onchain.onchainTx) ? onchain.onchainTx : null;
+    noteChange({ cause: ratingCause(rating, reason), proof: tx ? explorerTx(tx) : null, endpointId });
     log(`[rating] ${endpointId} ${rating}${reason ? ` (${reason})` : ""} -> score ${s.score} ${s.label}${tx ? `  on-chain ${tx.slice(0, 12)}...` : onchain.onchainError ? `  (on-chain pending: ${onchain.onchainError.slice(0, 60)})` : ""}`);
     res.json({ status: "stamped", endpointId, score: s.score, label: s.label, onchainTx: tx, explorer: tx ? explorerTx(tx) : null });
   });
@@ -246,6 +259,7 @@ export function createApp({ db, config, log = console.log, chain = null }) {
       throw err;
     }
     const s = scores().find((x) => x.endpointId === endpointId);
+    noteChange({ cause: `human review ${stars}/5 stars`, endpointId });
     log(`[review] ${endpointId} ${stars}/5 via ${source} -> score ${s.score} ${s.label}`);
     res.json({ status: "saved", endpointId, score: s.score, label: s.label });
   });
@@ -259,6 +273,7 @@ export function createApp({ db, config, log = console.log, chain = null }) {
     if (!getEndpoint(db, endpointId)) return fail(res, 404, "unknown_endpoint");
     if (typeof score !== "number" || score < 0 || score > 100) return fail(res, 400, "score_must_be_0_to_100");
     setTestScore(db, endpointId, score);
+    noteChange({ cause: `test score set to ${score}`, endpointId });
     res.json({ endpointId, testScore: score });
   });
 

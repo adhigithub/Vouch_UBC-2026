@@ -5,6 +5,7 @@
 //   ratings      agent good/bad ratings, one per payment
 //   reviews      human 1-5 star reviews, one per payment
 //   test_scores  the tester bot's latest score per endpoint (T)
+//   score_history  every time an endpoint's score or label changed, and why (for /grok "recent changes")
 import { DatabaseSync } from "node:sqlite";
 
 export function openDb(file = ":memory:") {
@@ -61,6 +62,17 @@ export function openDb(file = ":memory:") {
       created_at   TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS reviews_endpoint ON reviews(endpoint_id);
+
+    CREATE TABLE IF NOT EXISTS score_history (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      endpoint_id  TEXT NOT NULL,
+      score        INTEGER NOT NULL,
+      label        TEXT NOT NULL,
+      cause        TEXT NOT NULL,      -- e.g. "agent rated BAD (sanity)", "baseline"
+      proof        TEXT,               -- Solana explorer link for the event, if any
+      at           TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS score_history_endpoint ON score_history(endpoint_id, id);
 
     CREATE TABLE IF NOT EXISTS test_scores (
       endpoint_id  TEXT PRIMARY KEY,
