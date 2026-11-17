@@ -6,7 +6,8 @@
   "scripts": {
     "agent": "node agent.js",
     "demo": "node demo.js",
-    "balance": "node balance.js"
+    "balance": "node balance.js",
+    "runner": "node runner.js"
   },
   "keywords": [],
   "author": "",

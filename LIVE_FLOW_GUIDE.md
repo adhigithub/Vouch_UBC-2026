@@ -99,7 +99,23 @@ These go through the agent runner (section 5), which knows how to build them. Th
 
 ## 5. The agent runner (the piece that connects your page to the agent)
 
-**Status:** not built yet. **AdHi018 builds it.** Until then, build your page against the **mock events below**, so you're not blocked.
+**Status: ✅ built** (`agent/runner.js`, port 4100). Start it with:
+
+```bash
+cd agent && VOUCH_URL=http://localhost:4000 PAYMENTS=on FAKE_APIS_URL=http://localhost:3005 npm run runner
+```
+
+Real runs only work on AdHi018's machine (it needs the agent wallet). On yours, use the **mock events below**: the format is exactly what the runner sends.
+
+| Route | What it does |
+|---|---|
+| `POST /agent/run` `{task, params}` | Runs the agent; the reply is a live stream of the events below. `409 busy` if a run is already going |
+| `GET /agent/tasks` | Ready-made demo tasks for the Run buttons (`[{id, label, task, params}]`) |
+| `GET /agent/last` | All events of the most recent run (e.g. after a page reload) |
+| `GET /agent/modes` | Which APIs are honest or scams right now |
+| `POST /agent/scam` `{endpointId, mode}` | "Make this API a scam" (`mode: "sanity"`), or honest again (`"good"`) |
+| `POST /agent/reset` | All APIs back to normal |
+| `POST /agent/cheat` `{kind}` | Try a cheat: `fake_payment`, `rate_twice`, `steal_payment`, `forged_signature`. Returns `{title, attempt, blocked, status, error, explanation}`; show it as a red BLOCKED card |
 
 It's a small Node service next to the agent that **runs the agent and streams each step** to the website. The agent's wallet key stays on the server.
 
@@ -139,6 +155,10 @@ const res = await fetch("/api/agent/run", { method: "POST", headers: { "content-
 { "type": "failed",     "reason": "3 bad results (retry limit 2)", "spent": 0.03 }
 ```
 
+- Two more events can appear:
+  - `{ "type": "not_charged", "endpointId", "status", "error" }`: the API couldn't be paid (show a gray "not charged" step).
+  - `{ "type": "rate_failed", "endpointId", "paymentId", "status", "error" }`: usually `payment_not_verified`, meaning QuickNode didn't report the payment in time (Stream paused). Show it red with "QuickNode didn't confirm the payment".
+- Every event also has an `"at"` timestamp.
 - `buy` → `paid` → `checks` → `verifying`/`verified` → `rated` repeats for each API tried. If the first one is BAD, you'll see a second `buy` for the next-best API.
 - A `rated` event for a BAD rating has `"rating": "bad", "reason": "sanity"` (or `empty`, `format`, `slow`).
 - `onchainTx`/`explorer` can be `null` if Solana is slow. Show "saving to Solana…" then.
@@ -218,7 +238,7 @@ cd server && npm install && cp .env.example .env && npm start     # http://local
 | Item | Who | Target |
 |---|---|---|
 | **Live Flow page** (flow diagram, Run, Make scam, Try to cheat) | **You** | **Wed** |
-| Agent runner (`POST /agent/run` event stream, cheat routes) | AdHi018 | Tue–Wed |
+| Agent runner (`POST /agent/run` event stream, cheat routes) | AdHi018 | ✅ Done |
 | Leaderboard + detail page | Leaderboard teammate | Wed |
 | `/grok` page tested with Grok on X, Vouch X account and auto-alerts | AdHi018 | Tue–Thu |
 | Disputes and moderator page (human oversight) | AdHi018 | Thu |

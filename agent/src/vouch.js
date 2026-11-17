@@ -12,7 +12,7 @@ const RATE_RETRIES = 8;
 const RATE_RETRY_MS = 3000;
 
 // Must match server/src/signatures.js exactly.
-const ratingMessage = ({ endpointId, paymentId, rating, reason }) =>
+export const ratingMessage = ({ endpointId, paymentId, rating, reason }) =>
   ["vouch-rating-v1", endpointId, paymentId, rating, reason ?? ""].join("\n");
 
 /** Trusted endpoints for a task, best first. Throws if Vouch can't be reached. */
@@ -28,9 +28,10 @@ export async function best(task) {
 
 /**
  * Send a rating, signed by this agent's wallet (the wallet that paid).
+ * `onWaiting(attempt)` is called each time Vouch says the payment isn't confirmed yet.
  * Returns { status, body }.
  */
-export async function rate({ endpointId, paymentId, rating, reason = null }) {
+export async function rate({ endpointId, paymentId, rating, reason = null }, { onWaiting = () => {} } = {}) {
   if (usingMock) return mock.rate({ endpointId, paymentId, rating, reason });
 
   const body = JSON.stringify({
@@ -52,6 +53,7 @@ export async function rate({ endpointId, paymentId, rating, reason = null }) {
     const text = await res.text();
     const notVerifiedYet = res.status === 400 && text.includes("payment_not_verified");
     if (!notVerifiedYet || attempt > RATE_RETRIES) return { status: res.status, body: text };
+    onWaiting(attempt);
     await new Promise((r) => setTimeout(r, RATE_RETRY_MS));
   }
 }
