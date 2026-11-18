@@ -14,7 +14,7 @@
 
 **Track:** Agentic Payments and AI · **Chain award:** Best use of Solana · **Bounties:** QuickNode Streams, Grok Bot
 
-[Demo video](#) · [Program on Explorer](https://explorer.solana.com/address/GyYPjRNghiX96xFtP98eNMiYjKfrF5ktKLf1Mm2YBgni?cluster=devnet) · [Grok chat exports](grok/README.md)
+[Demo video](#) · [Program on Explorer](https://explorer.solana.com/address/GyYPjRNghiX96xFtP98eNMiYjKfrF5ktKLf1Mm2YBgni?cluster=devnet) · [Grok chat exports](grok-chat-exports/README.md)
 
 </div>
 
@@ -156,7 +156,9 @@ The Stream is Vouch's **independent proof that a payment happened**, so we never
 
 Grok Bot is how people and their agents act on Vouch's scores without leaving X. The server publishes a live plain-text [`/grok`](server/src/grok.js) feed with current scores, which APIs to avoid and why, what to switch to, and a Solana proof link for every bad rating. Grok uses it to recommend APIs, checks the proof transactions itself on Solana, and runs an **hourly automation** that alerts users when an API is caught scamming.
 
-**Chat exports** ([`grok/`](grok/)): [1. recommends an API](https://grok.com/share/c2hhcmQtMi1jb3B5_10667e27-306c-4591-b8e9-c4e284ea51cf) · [2. scam warning](grok/chat-2-scam-warning.md) · [3. verifies on-chain proof](grok/chat-3-onchain-proof.md) · [4. hourly monitor](grok/chat-4-hourly-monitor.md)
+**Chat exports** ([`grok-chat-exports/`](grok-chat-exports/README.md)): [1. recommends an API](https://grok.com/share/c2hhcmQtMi1jb3B5_10667e27-306c-4591-b8e9-c4e284ea51cf) · [2. scam warning](https://grok.com/share/c2hhcmQtMi1jb3B5_d82bec33-cbfa-4867-b280-58839e6a48fb) · [3. verifies on-chain proof](https://grok.com/share/c2hhcmQtMi1jb3B5_bdc54411-e32b-4ff6-8373-9d200eab864d) · [4. hourly monitor](https://grok.com/share/c2hhcmQtMi1jb3B5_6be2297b-60ab-405b-8dd2-b61428f375e0)
+
+**Screenshots:** [advice](grok-chat-exports/chat-1-advice.png) · [monitor setup](grok-chat-exports/chat-2-monitor-setup.png) · [hourly alert](grok-chat-exports/chat-3-hourly-alert.png) · [acting on it](grok-chat-exports/chat-4-act.png) · [after a change](grok-chat-exports/chat-5-after-change.png)
 
 ---
 
