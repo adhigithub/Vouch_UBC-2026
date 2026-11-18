@@ -19,12 +19,14 @@
 //
 // Settings (.env): TESTER_SECRET_KEY, VOUCH_URL, FAKE_APIS_URL, VOUCH_ADMIN_TOKEN,
 //                  TEST_INTERVAL_MIN (default 15)
-import { FAKE_APIS_URL, VOUCH_URL } from "./src/config.js";
+import { FAKE_APIS_URL, PAYMENTS, VOUCH_URL } from "./src/config.js";
 import { makeWallet } from "./src/wallet.js";
 import { runChecks } from "./src/checks.js";
 
 const ADMIN_TOKEN = process.env.VOUCH_ADMIN_TOKEN;
 const INTERVAL_MIN = Number(process.env.TEST_INTERVAL_MIN || 15);
+// Stop a round early once this many APIs in a row couldn't be paid (e.g. wallet empty).
+const MAX_SKIPS_IN_A_ROW = 3;
 const once = process.argv.includes("--once");
 
 // Inputs to test with, rotated each round.
@@ -64,11 +66,21 @@ export async function testRound(wallet, round = 0, emit = () => {}) {
     } catch (err) {
       result = { status: 0, body: "", ms: 0, paid: false, error: err.message };
     }
-    if (!result.paid && result.error) return { skipped: result.error };
+    // Our payment didn't go through (no internet, tester out of USDC, payment refused):
+    // we never saw the API's real answer, so this says nothing about the API.
+    if (PAYMENTS && !result.paid) {
+      return { skipped: result.error ?? (result.status === 402 ? "our payment was refused (is the tester wallet out of USDC?)" : `HTTP ${result.status} before payment`) };
+    }
     return { result, verdict: await runChecks(result, { task: e.task, schema: e.schema, params }) };
   }
 
+  let skipsInARow = 0;
   for (const e of catalog) {
+    if (skipsInARow >= MAX_SKIPS_IN_A_ROW) {
+      console.log("  stopping this round: payments keep failing (check the tester's USDC and the connection)");
+      emit({ type: "test_skipped", endpointId: "(rest of round)", why: "payments keep failing; check the tester wallet's USDC and the connection" });
+      break;
+    }
     const samples = SAMPLES[e.task] ?? [{}];
     const params = samples[round % samples.length];
     let t = await check(e, params);
@@ -77,8 +89,10 @@ export async function testRound(wallet, round = 0, emit = () => {}) {
     if (t.skipped) {
       console.log(`  ? ${e.endpointId}: couldn't test (${t.skipped})`);
       emit({ type: "test_skipped", endpointId: e.endpointId, why: t.skipped });
+      skipsInARow++;
       continue;
     }
+    skipsInARow = 0;
     // Failed? Double-check once with another input before marking it failed.
     let rechecked = false;
     if (t.verdict.rating !== "good") {

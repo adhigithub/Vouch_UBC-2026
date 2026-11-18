@@ -15,7 +15,7 @@
 //   POST /agent/test-round             run the tester bot once over every API now (streamed like /agent/run)
 //   GET  /agent/tester                 the background tester: interval, last/next round, latest results
 //
-// The tester bot also runs on its own every TEST_INTERVAL_SEC (default 120s, 0 = off),
+// The tester bot can also run on its own every TEST_INTERVAL_SEC (default 0 = off, manual only),
 // so scams get flagged and fixed APIs recover without anyone pressing anything.
 //
 // Event list and page design: LIVE_FLOW_GUIDE.md.
@@ -47,7 +47,9 @@ let running = false;
 let testing = false;
 let testerRound = 0;
 let testerWallet = null; // the tester bot's own wallet (TESTER_SECRET_KEY), loaded on first use
-const TEST_INTERVAL_SEC = Number(process.env.TEST_INTERVAL_SEC ?? 120);
+// Each round costs about $0.10-0.15 of the tester's USDC, so the schedule is OFF by
+// default: run it with the "Run tester bot now" button. TEST_INTERVAL_SEC=600 turns it on.
+const TEST_INTERVAL_SEC = Number(process.env.TEST_INTERVAL_SEC ?? 0);
 const tester = { intervalSec: TEST_INTERVAL_SEC, lastRoundAt: null, nextRoundAt: null, lastResults: [], lastError: null };
 let lastRun = [];
 const runTimes = [];
