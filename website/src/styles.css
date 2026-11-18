@@ -562,3 +562,5 @@ main.flow-main { padding-left: 0; }
 .lb-count { font-family: var(--mono); font-size: 11px; color: var(--ink-3); margin-left: 4px; }
 .lb-task { margin-left: 6px; font-family: var(--mono); font-size: 11px; color: var(--ink-3); border: 1px solid var(--line); border-radius: 6px; padding: 1px 6px; }
 .lb-tabs + .lb-grid { margin-top: 14px; }
+
+.fl-note.ok { border-color: var(--green); color: var(--green); }

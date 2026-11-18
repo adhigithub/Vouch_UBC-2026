@@ -40,10 +40,15 @@ cd website && npm run dev
 In your Grok chat on X:
 > Update the Vouch monitor to use this link from now on: https://&lt;tunnel&gt;/grok
 
-### Set the starting state
-- Website → **Live Flow** → **Reset all** (every API back to normal).
-- **Leaderboard** check: crypto-api-1 **trusted**, weather-api-2 **about 100**, weather-api-1/current **trusted**.
-- ⚠️ **Don't run "Weather in Austin" before recording.** Scene 4 needs weather-api-2 to have **no ratings yet**, so one bad rating drops it straight to AVOID.
+### Set the starting state: press "↺ Reset demo" before every take
+Website → **Live Flow** → **↺ Reset demo** → confirm. It takes about a minute and:
+1. puts every API back to normal (honest ones honest, scams scams);
+2. clears all ratings, payments and scores (the server backs up the database first; on-chain records stay on Solana);
+3. runs one tester round, so the **scams start flagged** and the **honest APIs start trusted (about 90)**.
+
+Wait for the green **"✓ Demo reset … Ready to run."** Then check the **Leaderboard**: weather-api-1/current, weather-api-2, weather-api-1/forecast and crypto-api-1 are trusted; the rest are red.
+
+⚠️ **Don't run anything else between the reset and recording**, or the scores change.
 
 ### Rehearsal
 - Live Flow → **Bitcoin price** → **Run agent**. It should end green, with **"Payment confirmed by the QuickNode Stream"** and a **"View rating on Solana ↗"** link.
@@ -58,11 +63,11 @@ In your Grok chat on X:
 | 1 | **The problem** (15 s) | Website homepage (hero). | *"AI agents now pay for data on their own. But some APIs are scams: they take the money and send junk. How does an agent know who to trust before it pays?"* |
 | 2 | **The scoreboard** (20 s) | **Leaderboard** → click the **Weather** and **Crypto prices** tabs → **Verify On-Chain** on one row. | *"Vouch scores every API from 0 to 100, based on real buyers' experience. Every rating is stored on Solana, and anyone can verify it."* |
 | 3 | **A normal purchase** (35 s) | **Live Flow** → task **Bitcoin price** → **▶ Run agent**. Point at the arrows as they light up. Click **"View rating on Solana ↗"**. | *"The agent asks Vouch which API to trust, pays one cent with x402 on Solana, checks the data, and rates it. The rating only counts because QuickNode confirmed the payment really happened."* |
-| 4 | **An API turns into a scam** (45 s) ⭐ | "Make an API a scam" → pick **weather-api-2/current** → **Wrong data**. Task **Weather in Austin** → **Run**. Watch: it buys weather-api-2 → **✗ makes sense** → **BAD** → drops to **AVOID** → switches to weather-api-1 → **GOOD**. | *"This API just went bad. The agent pays one cent, catches the wrong data, and rates it BAD. That warning is backed by a real payment and saved on Solana. Then it switches to a trusted API on its own."* |
-| 5 | **Nobody else gets fooled** (25 s) | Run **Weather in Austin** again → **"refuses weather-api-2 without paying"**. Then **🔍 Run tester bot now** → **✗ weather-api-2 failed twice**. | *"Now every agent refuses it before paying. And Vouch's own tester bot, with its own wallet, re-checks every API on a schedule, so scams often get caught before any customer pays."* |
+| 4 | **An API turns into a scam** (45 s) ⭐ | "Make an API a scam" → pick **weather-api-1/current** → **Wrong data**. Task **Weather in Austin** → **Run**. Watch: it buys weather-api-1 (the top pick: same score, cheaper) → **✗ makes sense** → **BAD** → drops to **about 51 AVOID** → switches to **weather-api-2** → **GOOD**. | *"This API just went bad. The agent pays one cent, catches the wrong data, and rates it BAD. That warning is backed by a real payment and saved on Solana. Then it switches to a trusted API on its own."* |
+| 5 | **Nobody else gets fooled** (25 s) | Run **Weather in Austin** again → **"refuses weather-api-1 without paying"** (it buys weather-api-2 instead). Then **🔍 Run tester bot now** → **✗ weather-api-1 failed twice**. | *"Now every agent refuses it before paying. And Vouch's own tester bot, with its own wallet, re-checks every API on a schedule, so scams often get caught before any customer pays."* |
 | 6 | **Try to cheat** (20 s) | Click all 4 **Try to cheat** buttons → 4 red **BLOCKED** cards. | *"Fake payments, reusing a payment, stealing someone else's payment, forging a signature: all blocked. No payment, no review."* |
-| 7 | **Grok on X** (25 s) | Grok on X: *"Run the Vouch monitor now"* → it reports weather-api-2 became AVOID, why, the Solana proof, and what to switch to. Then show the saved **automatic** alert. | *"Grok watches Vouch for you. Every hour it checks for changes and tells you what to do, with on-chain proof. It even notices when a warning rests on only one buyer."* |
-| 8 | **Recovery** (15 s, optional) | **Reset all** → **Run tester bot now** twice → weather-api-2 climbs back on the leaderboard. | *"APIs that get fixed earn their way back: the tester has to see them working again. Flipping a switch isn't enough."* |
+| 7 | **Grok on X** (25 s) | Grok on X: *"Run the Vouch monitor now"* (if it seems stale, give the link with a new `?t=` number) → it reports weather-api-1 became AVOID, why, the Solana proof, and to switch to weather-api-2. Then show the saved **automatic** alert screenshot. | *"Grok watches Vouch for you. Every hour it checks for changes and tells you what to do, with on-chain proof. It even notices when a warning rests on only one buyer."* |
+| 8 | **Recovery** (15 s, optional) | Scam box → weather-api-1/current → **Honest** → **Run tester bot now** twice → it climbs back on the leaderboard. | *"APIs that get fixed earn their way back: the tester has to see them working again. Flipping a switch isn't enough."* |
 | 9 | **Close** (15 s) | The Live Flow map. | *"x402 payments on Solana. QuickNode confirms every payment. Our Solana program stores every rating. Grok watches it all. One agent loses a cent, and no other agent loses anything."* |
 
 ---
@@ -87,8 +92,8 @@ In your Grok chat on X:
 | Rating says **"payment not verified"** | The QuickNode Stream stopped. Check its logs; re-activate with **"Start from the latest slot"**. Check the webhook URL ends with `/webhook/quicknode`. |
 | **"fetch failed"** when paying | No connection to Solana (network blocks it, or the hotspot dropped). Switch networks. |
 | Grok **can't open the page** | The tunnel restarted and has a new address. Update the Grok monitor link (and QuickNode). |
-| Agent **refuses every API** | They're all below 60. Press **Reset all**, then **Run tester bot now** once or twice to let honest APIs recover. |
+| Agent **refuses every API** | They're all below 60. Press **↺ Reset demo**. |
 | **Run tester bot now** shows "Queued" | A round is already running; yours starts as soon as it ends. |
-| Need to **redo scene 4** | weather-api-2 now has a rating, so the instant drop won't repeat. Use another API with no ratings (e.g. weather-api-1/forecast after it recovers), or reset the demo data first. |
+| Need to **redo a take** | Press **↺ Reset demo**, wait for "Ready to run", and start again. Every take then behaves the same. |
 
-**Cost:** about $0.10–0.20 of devnet USDC from the agent for the whole video, plus about $0.12 per tester round.
+**Cost:** about $0.10–0.20 of devnet USDC from the agent for the whole video, plus about $0.12 per tester round (each **Reset demo** runs one). The tester's wallet has about 3.5 USDC; top it up with `cd agent && node tester-setup.js 3`.

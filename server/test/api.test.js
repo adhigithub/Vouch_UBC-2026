@@ -273,3 +273,15 @@ test("parser: finds the payer (transfer authority, not the fee payer) and ignore
   assert.equal(paymentsFromTransaction({ ...tx, meta: { ...tx.meta, err: { x: 1 } } }, { mint: MINT, tokenAccounts: new Set(["ATA_GOOD"]) }).length, 0);
   assert.equal(paymentsFromTransaction(tx, { mint: "OTHER", tokenAccounts: new Set(["ATA_GOOD"]) }).length, 0);
 });
+
+// ---------- demo reset (last: it clears everything) ----------
+
+test("admin: demo reset needs the token, then clears ratings, payments and scores", async () => {
+  assert.equal((await post("/admin/reset-demo", {})).status, 401);
+  const r = await post("/admin/reset-demo", {}, { "x-admin-token": ADMIN });
+  assert.equal(r.status, 200);
+  assert.ok(r.body.cleared.ratings > 0 && r.body.cleared.payments > 0);
+  assert.equal((await get("/payments")).length, 0);
+  const all = await get("/scores");
+  assert.ok(all.every((e) => e.ratings === 0 && e.score === 80 && e.label === "unrated"));
+});

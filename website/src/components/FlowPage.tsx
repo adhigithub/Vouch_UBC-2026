@@ -14,6 +14,7 @@ import {
   shortAddr,
   streamAgentRun,
   streamTestRound,
+  streamResetDemo,
   tryCheat,
   type TesterEvent,
   type TesterStatus,
@@ -238,6 +239,8 @@ export function FlowPage() {
   const [tests, setTests] = useState<TesterEvent[]>([]);
   const [testing, setTesting] = useState(false);
   const [tester, setTester] = useState<TesterStatus | null>(null);
+  const [resetting, setResetting] = useState(false);
+  const [resetMsg, setResetMsg] = useState<string | null>(null);
   const [, tick] = useState(0);
 
   // The tester bot runs on its own in the background; show when, and what it found.
@@ -315,6 +318,34 @@ export function FlowPage() {
     }
   }
 
+  // One click before each demo take: every take then starts from the same state.
+  async function resetDemo() {
+    if (running || testing || resetting) return;
+    if (!window.confirm("Reset the demo?\n\nAll APIs go back to normal, and every rating, payment and score is cleared (the server backs up the database first). Then the tester bot checks every API once (about $0.10 of test USDC).")) return;
+    setResetting(true);
+    setError(null);
+    setEvents([]);
+    setCheats([]);
+    setTests([]);
+    setModeMsg(null);
+    setResetMsg("Resetting: putting every API back to normal…");
+    try {
+      for await (const ev of streamResetDemo()) {
+        if (ev.type === "reset_modes") setResetMsg("✓ APIs back to normal · clearing scores…");
+        else if (ev.type === "reset_scores") setResetMsg("✓ APIs back to normal · ✓ scores cleared (backed up) · tester bot checking every API…");
+        else if (ev.type === "reset_done") setResetMsg("✓ Demo reset: scams are flagged, honest APIs are trusted. Ready to run.");
+        else if (ev.type === "reset_failed") setResetMsg(null), setError(`Reset failed: ${ev.reason}`);
+        else setTests((xs) => [...xs, ev]);
+      }
+    } catch (e) {
+      setError((e as Error).message);
+      setResetMsg(null);
+    } finally {
+      setResetting(false);
+      loadModes();
+    }
+  }
+
   async function cheat(kind: string) {
     try {
       const r = await tryCheat(kind);
@@ -344,7 +375,10 @@ export function FlowPage() {
             {tasks.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
           </select>
         </label>
-        <button className="fl-run" onClick={run} disabled={running || !taskId}>{running ? "Running…" : "▶ Run agent"}</button>
+        <button className="fl-run" onClick={run} disabled={running || resetting || !taskId}>{running ? "Running…" : "▶ Run agent"}</button>
+        <button className="fl-chip" onClick={resetDemo} disabled={running || testing || resetting} title="Start a fresh demo take">
+          {resetting ? "Resetting…" : "↺ Reset demo"}
+        </button>
         <span className="mono t-dim">spent <b className="t-ink">{money(spent)}</b> of $0.25 budget</span>
         <span className={`fl-status ${running ? "wait" : last?.type === "done" ? "ok" : last?.type === "failed" ? "fail" : ""}`}>
           {running ? "live" : last ? (last.type === "done" ? "finished" : last.type === "failed" ? "stopped" : "idle") : "ready"}
@@ -352,6 +386,7 @@ export function FlowPage() {
       </div>
 
       {error && <div className="fl-note bad">{error}</div>}
+      {resetMsg && <div className="fl-note ok">{resetMsg}</div>}
 
       <div className={`fl-now ${stage.tone}`} aria-live="polite">
         <span className="fl-now-tag">{now ? "Now" : "How it works"}</span>

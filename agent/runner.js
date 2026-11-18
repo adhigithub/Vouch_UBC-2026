@@ -14,6 +14,8 @@
 //   POST /agent/cheat {kind}           try to cheat Vouch; returns how Vouch blocked it
 //   POST /agent/test-round             run the tester bot once over every API now (streamed like /agent/run)
 //   GET  /agent/tester                 the background tester: interval, last/next round, latest results
+//   POST /agent/reset-demo             fresh demo: APIs back to normal, scores cleared (backed up),
+//                                      then one tester round so scams start flagged (streamed)
 //
 // The tester bot can also run on its own every TEST_INTERVAL_SEC (default 0 = off, manual only),
 // so scams get flagged and fixed APIs recover without anyone pressing anything.
@@ -176,6 +178,45 @@ function scheduleTester() {
   setInterval(tick, TEST_INTERVAL_SEC * 1000);
 }
 
+// ---------- demo reset ----------
+
+async function resetDemo(req, res) {
+  if (running || testing) return json(res, 409, { error: "busy", hint: "Wait for the current run or tester round to finish." });
+  const token = process.env.VOUCH_ADMIN_TOKEN;
+  if (!token) return json(res, 503, { error: "VOUCH_ADMIN_TOKEN not set", hint: "Same value as ADMIN_TOKEN in server/.env" });
+  res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
+  const emit = (event) => !res.writableEnded && res.write(`data: ${JSON.stringify({ at: new Date().toISOString(), ...event })}
+
+`);
+  try {
+    // 1. every API back to its normal mode (honest ones honest, scams scams)
+    const modes = await fakeApisAdmin("/admin/reset", {});
+    if (modes.status !== 200) throw new Error(`couldn't reset API modes (HTTP ${modes.status})`);
+    emit({ type: "reset_modes" });
+
+    // 2. clear ratings, payments, test scores and history on the Vouch server (it backs up first)
+    const r = await fetch(`${VOUCH_URL}/admin/reset-demo`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-admin-token": token },
+      body: "{}",
+      signal: AbortSignal.timeout(10000),
+    });
+    const body = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(`couldn't clear scores (${body.error ?? `HTTP ${r.status}`})`);
+    emit({ type: "reset_scores", cleared: body.cleared, backup: body.backup });
+    lastRun = [];
+
+    // 3. one tester round: scams start flagged, honest APIs start trusted
+    if (process.env.TESTER_SECRET_KEY) await runTesterRound(emit);
+    else emit({ type: "test_skipped", endpointId: "(all)", why: "tester bot not set up (node tester-setup.js)" });
+    emit({ type: "reset_done" });
+  } catch (err) {
+    emit({ type: "reset_failed", reason: err.message });
+  } finally {
+    res.end();
+  }
+}
+
 // ---------- "try to cheat" demos ----------
 
 // A recent payment this agent made and already rated (a real one, for the cheats that reuse it).
@@ -278,6 +319,7 @@ http
       if (req.method === "POST" && path === "/agent/run") return await run(req, res);
       if (req.method === "POST" && path === "/agent/cheat") return await cheat(req, res);
       if (req.method === "POST" && path === "/agent/test-round") return await testNow(req, res);
+      if (req.method === "POST" && path === "/agent/reset-demo") return await resetDemo(req, res);
       if (req.method === "GET" && path === "/agent/tester")
         return json(res, 200, { ...tester, running: testing, enabled: !!(process.env.TESTER_SECRET_KEY && TEST_INTERVAL_SEC) });
       if (req.method === "GET" && path === "/agent/modes") {

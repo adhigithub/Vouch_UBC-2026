@@ -1044,9 +1044,15 @@ export function streamAgentRun(task: string, params: Record<string, string>): As
 
 /** One tester-bot event: an API it tested, one it couldn't test, or the round starting/ending. */
 export interface TesterEvent {
-  type: "test_queued" | "test_start" | "test" | "test_skipped" | "test_done" | "test_failed";
+  type: "test_queued" | "test_start" | "test" | "test_skipped" | "test_done" | "test_failed"
+    | "reset_modes" | "reset_scores" | "reset_done" | "reset_failed";
   at: string;
   [key: string]: any;
+}
+
+/** Fresh demo: APIs back to normal, scores cleared (server backs up first), one tester round. */
+export function streamResetDemo(): AsyncGenerator<TesterEvent> {
+  return streamRunner("/agent/reset-demo", {}) as AsyncGenerator<any>;
 }
 
 /** Runs Vouch's tester bot once over every API and yields each result as it happens. */

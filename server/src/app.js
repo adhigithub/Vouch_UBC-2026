@@ -266,6 +266,26 @@ export function createApp({ db, config, log = console.log, chain = null }) {
 
   // ---------- admin ----------
 
+  // Demo reset: back up the database, then clear every rating, review, payment,
+  // test score and score history, so each demo take starts from the same state.
+  // Endpoints stay; on-chain ratings stay on Solana (they can't be deleted).
+  app.post("/admin/reset-demo", (req, res) => {
+    if (!config.adminToken) return fail(res, 503, "admin_token_not_configured");
+    if (!sameSecret(req.get("x-admin-token"), config.adminToken)) return fail(res, 401, "bad_admin_token");
+    let backup = null;
+    if (config.dbFile && config.dbFile !== ":memory:") {
+      backup = `${config.dbFile.replace(/\.db$/, "")}.backup-${new Date().toISOString().replace(/[:.]/g, "-")}.db`;
+      db.exec(`VACUUM INTO '${backup.replace(/'/g, "''")}'`);
+    }
+    const cleared = {};
+    for (const table of ["ratings", "reviews", "payments", "test_scores", "score_history"]) {
+      cleared[table] = db.prepare(`DELETE FROM ${table}`).run().changes;
+    }
+    recordScoreChanges(db, { defaultTestScore: config.defaultTestScore, cause: "baseline" });
+    log(`[admin] demo reset: cleared ${JSON.stringify(cleared)}${backup ? `, backup ${backup}` : ""}`);
+    res.json({ status: "reset", cleared, backup });
+  });
+
   app.post("/admin/test-score", (req, res) => {
     if (!config.adminToken) return fail(res, 503, "admin_token_not_configured");
     if (!sameSecret(req.get("x-admin-token"), config.adminToken)) return fail(res, 401, "bad_admin_token");
