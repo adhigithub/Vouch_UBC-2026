@@ -44,7 +44,11 @@ async function candidatesFor(task) {
 function refuse(c, spent, fallback) {
   if (!fallback && c.score < SAFETY.minScore) return `score ${c.score} is below the cutoff of ${SAFETY.minScore}`;
   if (c.price > SAFETY.maxPricePerCall) return `price ${usd(c.price)} is over the ${usd(SAFETY.maxPricePerCall)} per-call limit`;
-  if (c.label === "unrated" && c.price > SAFETY.unratedMaxPrice) return `unrated, and price ${usd(c.price)} is over ${usd(SAFETY.unratedMaxPrice)}`;
+  // Untried AND untested: only risk a small amount. Once Vouch's tester bot has
+  // checked it (testScoreIsDefault false), the normal per-call limit applies.
+  if (c.label === "unrated" && c.testScoreIsDefault !== false && c.price > SAFETY.unratedMaxPrice) {
+    return `unrated and untested, and price ${usd(c.price)} is over ${usd(SAFETY.unratedMaxPrice)}`;
+  }
   if (spent + c.price > SAFETY.budgetPerTask) return `would exceed the ${usd(SAFETY.budgetPerTask)} task budget`;
   return null;
 }

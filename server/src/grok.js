@@ -40,7 +40,7 @@ function partsLine(parts) {
 /** The endpoint an agent should buy from for a task: best score, then cheapest, never "avoid". */
 export function recommend(scores, task) {
   return scores
-    .filter((s) => s.task === task && s.label !== "avoid")
+    .filter((s) => s.task === task && s.label !== "avoid" && s.score >= 60)
     .sort((a, b) => b.score - a.score || a.price - b.price)[0] ?? null;
 }
 

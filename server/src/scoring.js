@@ -11,6 +11,7 @@
 //   - a missing part (e.g. no human reviews yet) has its weight shared among the others
 //   - test cap: ratings can only lift a score 10 points above T
 //   - no agent ratings and no reviews yet -> score = T, labelled "unrated"
+//     (or "avoid" if T is under 60: it failed the tester bot's checks)
 //   - agents won't pay below 60
 
 export const WEIGHTS = { T: 0.4, A: 0.3, H: 0.2, R: 0.1 };
@@ -72,7 +73,8 @@ export function computeScore({ T, ratings = [], reviews = [], paymentsByWallet =
 
   return {
     score,
-    label: unrated ? "unrated" : score >= CUTOFF ? "trusted" : "avoid",
+    // No buyer ratings yet: "unrated", unless it failed our own tests (then avoid it).
+    label: score < CUTOFF ? "avoid" : unrated ? "unrated" : "trusted",
     parts: Object.fromEntries(Object.entries(parts).map(([k, v]) => [k, v === null ? null : round(v)])),
   };
 }

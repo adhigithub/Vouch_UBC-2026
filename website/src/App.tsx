@@ -7,8 +7,21 @@ import { Leaderboard } from "./components/Leaderboard";
 import { Nav } from "./components/Nav";
 import { PlayheadRail } from "./components/PlayheadRail";
 import { Sandbox } from "./components/Sandbox";
+import { FlowPage } from "./components/FlowPage";
+import { useIsFlowPage } from "./hooks/useRoute";
 
 export default function App() {
+  const flow = useIsFlowPage();
+  if (flow)
+    return (
+      <>
+        <div className="ambient" aria-hidden="true" />
+        <Nav />
+        <main className="flow-main">
+          <FlowPage />
+        </main>
+      </>
+    );
   return (
     <>
       <div className="ambient" aria-hidden="true" />

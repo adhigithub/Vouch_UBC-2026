@@ -244,7 +244,7 @@ test("admin: test score needs the token, and changes T", async () => {
   assert.equal((await post("/admin/test-score", { endpointId: "crypto-x/price", score: 30 }, { "x-admin-token": ADMIN })).status, 200);
   const c = (await get("/scores")).find((e) => e.endpointId === "crypto-x/price");
   assert.equal(c.score, 30);
-  assert.equal(c.label, "unrated");
+  assert.equal(c.label, "avoid"); // no buyer ratings, but it failed our tests
 });
 
 // ---------- payment parser (QuickNode stand-in) ----------

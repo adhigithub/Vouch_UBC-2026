@@ -57,14 +57,14 @@ export const TEST_CAP_MARGIN = 10;
 // Clean UI names → the real routes in fake-apis/server.js (`pathFor(id) = "/" + id`).
 // `endpointId` is the id the Vouch server and the on-chain PDA seed use.
 
-export type EndpointTag = "Verified Good" | "Unrated" | "Wrong Data" | "Wrong Schema" | "Empty Payload" | "Bad Format" | "Slow" | "Flaky";
+export type EndpointTag = "Verified Good" | "Unrated" | "Failed Tests" | "Wrong Data" | "Wrong Schema" | "Empty Payload" | "Bad Format" | "Slow" | "Flaky";
 
 /** Live tag from the real data: trusted, unrated, or (if AVOID) why agents rejected it. */
 const REASON_TAG: Record<string, EndpointTag> = { sanity: "Wrong Data", format: "Bad Format", empty: "Empty Payload", slow: "Slow" };
 function liveTag(label: string | undefined, lastRating: { rating?: string; reason?: string } | null | undefined): EndpointTag | null {
   if (label === "trusted") return "Verified Good";
   if (label === "unrated") return "Unrated";
-  if (label === "avoid") return (lastRating?.reason && REASON_TAG[lastRating.reason]) || "Flaky";
+  if (label === "avoid") return lastRating ? (lastRating.reason && REASON_TAG[lastRating.reason]) || "Flaky" : "Failed Tests";
   return null;
 }
 
@@ -986,4 +986,88 @@ async function* runMockAgentLoop(task: "weather"): AsyncGenerator<AgentTraceStep
   yield { kind: "submit", status: "ok", text: `stamping on Solana · submit_rating → PDA ${shortAddr(best.pdaAddress)}`, delayMs: 850,
     detail: `POST /rate 200 stamped · ${best.endpointUrl} score ${before.toFixed(2)} → ${after.toFixed(2)}` };
   yield { kind: "done", status: "ok", text: `Task complete. Spent 0.01 USDC. Refused ${blocked.length} untrusted endpoint${blocked.length === 1 ? "" : "s"}.`, delayMs: 0 };
+}
+
+// ───────────────────────── Agent runner (Live Flow page) ─────────────────────────
+// agent/runner.js: starts the real agent and streams each step. LIVE_FLOW_GUIDE.md §5.
+
+/** One step the agent reports, exactly as the runner sends it. */
+export interface RunnerEvent {
+  type: "start" | "candidates" | "skip" | "buy" | "paid" | "not_charged" | "checks" | "verifying" | "verified" | "rated" | "rate_failed" | "done" | "failed";
+  at: string;
+  [key: string]: any;
+}
+export interface RunnerTask { id: string; label: string; task: string; params: Record<string, string> }
+export interface CheatResult { kind: string; title: string; attempt: string; blocked: boolean; status: number; error: string | null; explanation: string | null }
+
+async function runner<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(`${AGENT_RUNNER_URL}${path}`, { ...init, headers: { "content-type": "application/json", ...(init?.headers ?? {}) } });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw Object.assign(new Error(body?.hint ?? body?.error ?? `agent runner -> HTTP ${res.status}`), { status: res.status, body });
+  return body as T;
+}
+
+export const fetchAgentTasks = () => runner<RunnerTask[]>("/agent/tasks");
+export const fetchApiModes = () => runner<Record<string, string>>("/agent/modes");
+export const setApiMode = (endpointId: string, mode: string) => runner<Json>("/agent/scam", { method: "POST", body: JSON.stringify({ endpointId, mode }) });
+export const resetApiModes = () => runner<Json>("/agent/reset", { method: "POST", body: "{}" });
+export interface TesterStatus {
+  enabled: boolean;
+  running: boolean;
+  intervalSec: number;
+  lastRoundAt: string | null;
+  nextRoundAt: string | null;
+  lastError: string | null;
+  lastResults: { endpointId: string; passed: boolean; reason: string | null; from: number; to: number }[];
+}
+export const fetchTesterStatus = () => runner<TesterStatus>("/agent/tester");
+export const tryCheat = (kind: string) => runner<CheatResult>("/agent/cheat", { method: "POST", body: JSON.stringify({ kind }) });
+
+/** Runs the real agent and yields every step it reports, as it happens. */
+export function streamAgentRun(task: string, params: Record<string, string>): AsyncGenerator<RunnerEvent> {
+  return streamRunner("/agent/run", { task, params });
+}
+
+/** One tester-bot event: an API it tested, one it couldn't test, or the round starting/ending. */
+export interface TesterEvent {
+  type: "test_start" | "test" | "test_skipped" | "test_done" | "test_failed";
+  at: string;
+  [key: string]: any;
+}
+
+/** Runs Vouch's tester bot once over every API and yields each result as it happens. */
+export function streamTestRound(): AsyncGenerator<TesterEvent> {
+  return streamRunner("/agent/test-round", {}) as AsyncGenerator<any>;
+}
+
+async function* streamRunner(path: string, payload: unknown): AsyncGenerator<RunnerEvent> {
+  const url = `${AGENT_RUNNER_URL}${path}`;
+  let res: Response;
+  try {
+    res = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
+  } catch {
+    throw new Error("Couldn't reach the agent runner. Start it with: cd agent && npm run runner");
+  }
+  if (!res.ok || !res.body) {
+    const b = await res.json().catch(() => ({}));
+    throw new Error(b.hint ?? b.error ?? `agent runner -> HTTP ${res.status}`);
+  }
+  const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
+  let buf = "";
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += value;
+      let i;
+      while ((i = buf.indexOf("\n\n")) >= 0) {
+        const chunk = buf.slice(0, i);
+        buf = buf.slice(i + 2);
+        const ev = parseJson(chunk.split("\n").filter((l) => l.startsWith("data:")).map((l) => l.slice(5).trim()).join(""));
+        if (ev?.type) yield ev as RunnerEvent;
+      }
+    }
+  } finally {
+    emitLeaderboard();
+  }
 }

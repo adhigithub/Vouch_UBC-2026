@@ -67,3 +67,9 @@ test("rater weight: wallets that only ever paid one endpoint count half", () => 
   assert.equal(raterWeight(1), 0.5);
   assert.equal(raterWeight(3), 1);
 });
+
+test("no buyer ratings but failed the tester bot's checks: avoid, not unrated", () => {
+  const r = computeScore({ T: 40 });
+  assert.equal(r.score, 40);
+  assert.equal(r.label, "avoid");
+});

@@ -7,7 +7,9 @@
     "agent": "node agent.js",
     "demo": "node demo.js",
     "balance": "node balance.js",
-    "runner": "node runner.js"
+    "runner": "node runner.js",
+    "tester": "node tester.js",
+    "tester:setup": "node tester-setup.js"
   },
   "keywords": [],
   "author": "",

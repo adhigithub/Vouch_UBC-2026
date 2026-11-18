@@ -1,4 +1,5 @@
 import { useActiveSection } from "../hooks/useScroll";
+import { navigate, useIsFlowPage } from "../hooks/useRoute";
 import { USE_MOCK_DATA } from "../lib/vouchApi";
 import { VLogo } from "./VLogo";
 
@@ -6,15 +7,14 @@ const TABS = [
   { id: "overview", label: "Overview" },
   { id: "leaderboard", label: "Solana Leaderboard" },
   { id: "sandbox", label: "Agent Sandbox" },
+  { id: "flow", label: "Live Flow" },
 ];
 
 export function Nav() {
-  const active = useActiveSection(TABS.map((t) => t.id));
-  const go = (id: string) => {
-    if (id === "overview") window.scrollTo({ top: 0 });
-    else document.getElementById(id)?.scrollIntoView();
-    history.replaceState(null, "", id === "overview" ? location.pathname : `#${id}`);
-  };
+  const onFlow = useIsFlowPage();
+  const section = useActiveSection(TABS.filter((t) => t.id !== "flow").map((t) => t.id));
+  const active = onFlow ? "flow" : section;
+  const go = (id: string) => navigate(id);
   return (
     <header className="nav">
       <a className="brand" href="#overview" onClick={(e) => (e.preventDefault(), go("overview"))}>

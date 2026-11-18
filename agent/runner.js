@@ -12,15 +12,21 @@
 //   POST /agent/scam  {endpointId, mode}   make an API a scam ("sanity", "empty", ...) or honest ("good")
 //   POST /agent/reset                  every API back to its normal mode
 //   POST /agent/cheat {kind}           try to cheat Vouch; returns how Vouch blocked it
+//   POST /agent/test-round             run the tester bot once over every API now (streamed like /agent/run)
+//   GET  /agent/tester                 the background tester: interval, last/next round, latest results
+//
+// The tester bot also runs on its own every TEST_INTERVAL_SEC (default 120s, 0 = off),
+// so scams get flagged and fixed APIs recover without anyone pressing anything.
 //
 // Event list and page design: LIVE_FLOW_GUIDE.md.
 // Settings (.env): VOUCH_URL, FAKE_APIS_URL, PAYMENTS=on, RUNNER_PORT, FAKE_APIS_ADMIN_TOKEN, MAX_RUNS_PER_HOUR
 import http from "node:http";
 import { generateKeyPairSigner, getBase58Decoder, signBytes } from "@solana/kit";
 import { runTask } from "./agent.js";
+import { testRound } from "./tester.js";
 import { FAKE_APIS_URL, VOUCH_URL } from "./src/config.js";
 import { ratingMessage } from "./src/vouch.js";
-import { signer, signText } from "./src/wallet.js";
+import { makeWallet, signer, signText } from "./src/wallet.js";
 
 const PORT = Number(process.env.RUNNER_PORT || 4100);
 const ADMIN_TOKEN = process.env.FAKE_APIS_ADMIN_TOKEN || "";
@@ -38,6 +44,11 @@ const TASKS = [
 const ALLOWED_TASKS = new Set(TASKS.map((t) => t.task));
 
 let running = false;
+let testing = false;
+let testerRound = 0;
+let testerWallet = null; // the tester bot's own wallet (TESTER_SECRET_KEY), loaded on first use
+const TEST_INTERVAL_SEC = Number(process.env.TEST_INTERVAL_SEC ?? 120);
+const tester = { intervalSec: TEST_INTERVAL_SEC, lastRoundAt: null, nextRoundAt: null, lastResults: [], lastError: null };
 let lastRun = [];
 const runTimes = [];
 
@@ -102,6 +113,60 @@ async function run(req, res) {
     running = false;
     res.end();
   }
+}
+
+// ---------- tester bot: one round over every API, streamed ----------
+
+/** One tester round; `emit` receives each result. Shared by the button and the background schedule. */
+async function runTesterRound(emit = () => {}) {
+  testing = true;
+  testerWallet ??= await makeWallet(JSON.parse(process.env.TESTER_SECRET_KEY));
+  emit({ type: "test_start", wallet: testerWallet.signer.address });
+  const results = [];
+  try {
+    const all = await testRound(testerWallet, testerRound++, (ev) => {
+      if (ev.type === "test") results.push(ev);
+      emit(ev);
+    });
+    emit({ type: "test_done", tested: all.length, failed: all.filter((r) => !r.passed).length });
+    tester.lastError = null;
+  } catch (err) {
+    tester.lastError = err.message;
+    emit({ type: "test_failed", reason: err.message });
+  } finally {
+    testing = false;
+    tester.lastRoundAt = new Date().toISOString();
+    if (results.length) tester.lastResults = results;
+  }
+}
+
+async function testNow(req, res) {
+  if (!process.env.TESTER_SECRET_KEY) return json(res, 503, { error: "tester_not_set_up", hint: "Run: node tester-setup.js" });
+  if (testing) return json(res, 409, { error: "busy", hint: "The tester bot is already running a round." });
+  res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
+  const emit = (event) => !res.writableEnded && res.write(`data: ${JSON.stringify({ at: new Date().toISOString(), ...event })}
+
+`);
+  try {
+    await runTesterRound(emit);
+  } finally {
+    res.end();
+  }
+}
+
+// Background schedule: a round every TEST_INTERVAL_SEC, skipped if one is already running.
+function scheduleTester() {
+  if (!process.env.TESTER_SECRET_KEY || !TEST_INTERVAL_SEC) return;
+  const tick = async () => {
+    tester.nextRoundAt = new Date(Date.now() + TEST_INTERVAL_SEC * 1000).toISOString();
+    if (!testing) {
+      console.log(`[tester] background round at ${new Date().toISOString()}`);
+      await runTesterRound();
+    }
+  };
+  setTimeout(tick, 5000); // first round shortly after start
+  tester.nextRoundAt = new Date(Date.now() + 5000).toISOString();
+  setInterval(tick, TEST_INTERVAL_SEC * 1000);
 }
 
 // ---------- "try to cheat" demos ----------
@@ -205,6 +270,9 @@ http
       if (req.method === "GET" && path === "/agent/last") return json(res, 200, lastRun);
       if (req.method === "POST" && path === "/agent/run") return await run(req, res);
       if (req.method === "POST" && path === "/agent/cheat") return await cheat(req, res);
+      if (req.method === "POST" && path === "/agent/test-round") return await testNow(req, res);
+      if (req.method === "GET" && path === "/agent/tester")
+        return json(res, 200, { ...tester, running: testing, enabled: !!(process.env.TESTER_SECRET_KEY && TEST_INTERVAL_SEC) });
       if (req.method === "GET" && path === "/agent/modes") {
         const r = await fakeApisAdmin("/admin/modes");
         return json(res, r.status, r.body);
@@ -225,5 +293,6 @@ http
     }
   })
   .listen(PORT, () => {
+    scheduleTester();
     console.log(`Agent runner on http://localhost:${PORT}  (wallet ${signer.address}, vouch ${VOUCH_URL || "stand-in"}, fake APIs ${FAKE_APIS_URL})`);
   });

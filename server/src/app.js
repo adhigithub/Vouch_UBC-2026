@@ -269,11 +269,11 @@ export function createApp({ db, config, log = console.log, chain = null }) {
   app.post("/admin/test-score", (req, res) => {
     if (!config.adminToken) return fail(res, 503, "admin_token_not_configured");
     if (!sameSecret(req.get("x-admin-token"), config.adminToken)) return fail(res, 401, "bad_admin_token");
-    const { endpointId, score } = req.body || {};
+    const { endpointId, score, reason } = req.body || {};
     if (!getEndpoint(db, endpointId)) return fail(res, 404, "unknown_endpoint");
     if (typeof score !== "number" || score < 0 || score > 100) return fail(res, 400, "score_must_be_0_to_100");
     setTestScore(db, endpointId, score);
-    noteChange({ cause: `test score set to ${score}`, endpointId });
+    noteChange({ cause: typeof reason === "string" && reason ? reason.slice(0, 200) : `test score set to ${score}`, endpointId });
     res.json({ endpointId, testScore: score });
   });
 
