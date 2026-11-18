@@ -29,6 +29,8 @@ changes only grammar and world will fail it.
 | Build | Grammar | Nav treatment | Hero device | Act-sequence shape | Close pattern | Signature move | World | Port |
 |---|---|---|---|---|---|---|---|---|
 | vouch | Live Surface + Split-Stage hybrid | Frosted top tab bar (Overview / Leaderboard / Sandbox) + fixed left telemetry rail, bottom bar on mobile | Pinned cold open: SVG faceted V with refractive sweep, typed HTTP request line | 5 acts: pin-split → pin-scrubbed dial → pin-SVG flow → 2 unpinned working surfaces | Working surface (agent runner + signed review form), then a resolving "200 OK" statement | x402 Playhead: one 6-step x402 purchase scrubbed by page scroll | Obsidian + prismatic glass, no generated media | 5173 |
+| vouch-shatter | Continuous world (worldflight, code-rendered SVG world, no video) | Wordmark + one CTA, and a clickable mini-V map (one link per shard, visited shards fill) in a bottom-left plate | Establishing position inside the world: flat ink V on paper with static headline, cracks start as the headline leaves | 9 worldflight legs, no acts, 13.1vh: hero 1.2 → fracture 1.9 (peak) → 6 shard legs at 1.4 → finale 1.6 | Arrival: camera pulls out, shards fly home into the V, centred statement + CTA pill under it | Shatter flight: the logo cracks into six shards along the payment path and the camera flies inside each, which draws itself | Paper + ink + cobalt, technical-drawing vector, no generated media | 4510 |
+| vouch-shatter r2 (supersedes the row above, same folder) | Continuous world (worldflight, code-rendered SVG world) with data waypoints in the copy layer | Wordmark + jump pill (Leaderboard / On Solana) + mini-V shard map that hides on data waypoints | Clean flat V on paper, static headline; drifts and cracks as the headline leaves | 12 legs, no acts, 16.3vh: hero 1.0 → fracture 2.0 (peak) → 6 shards at 1.25 → rejoin 1.2 → leaderboard 1.9 → on-chain 1.5 → finale 1.2 | Bookend: clean V centred, opening line repeated, one CTA pill | Shatter flight, plus a leaderboard that sorts itself into rank as you scroll and a cobalt seal traced round the V while devnet is read live | Paper + ink + cobalt, technical-drawing vector, live server + devnet data | 4510 |
 
 
 ---
@@ -41,6 +43,7 @@ act-count-and-length band. The shared columns are what the next build inherits
 as a constraint, so writing them down is the whole point.
 
 - **vouch**: Live Surface + Split-Stage hybrid; transaction-playhead rail as a signature move; working-surface close.
+- **vouch-shatter**: Continuous world on a code-rendered SVG camera; the logo-as-map nav; logo-shatter-and-fly-inside as a signature move; reassembly close. Shares the six x402 steps as content with `vouch` (owner's request). r2 adds: the scroll-sorted leaderboard, a seal-while-reading-chain waypoint, and a bookend close.
 
 ---
 
