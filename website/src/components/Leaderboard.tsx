@@ -26,7 +26,7 @@ export function Gauge({ score }: { score: number }) {
 }
 
 export function TagChip({ tag }: { tag: EndpointTag }) {
-  const tone = tag === "Verified Good" ? "good" : tag === "Slow" || tag === "Flaky" ? "warn" : "bad";
+  const tone = tag === "Verified Good" ? "good" : tag === "Slow" || tag === "Flaky" || tag === "Unrated" ? "warn" : "bad";
   return <span className={`tag ${tone}`}>{tag}</span>;
 }
 
@@ -109,7 +109,7 @@ export function Leaderboard() {
               </thead>
               <tbody>
                 {error && <tr><td colSpan={6} className="t-red mono">Couldn't reach the Vouch server: {error}</td></tr>}
-                {!rows && !error && <tr><td colSpan={6} className="t-dim mono">{USE_MOCK_DATA ? "loading…" : "GET /api/leaderboard …"}</td></tr>}
+                {!rows && !error && <tr><td colSpan={6} className="t-dim mono">{USE_MOCK_DATA ? "loading…" : "GET /scores …"}</td></tr>}
                 {rows?.map((r, i) => (
                   <Fragment key={r.endpointUrl}>
                     <tr
@@ -127,7 +127,7 @@ export function Leaderboard() {
                       </td>
                       <td><Gauge score={r.vouchScore} /></td>
                       <td className="num">{r.verifiedCalls.toLocaleString()}</td>
-                      <td className={`num ${r.avgLatencyMs > 2000 ? "lat-bad" : ""}`}>{r.avgLatencyMs.toLocaleString()} ms</td>
+                      <td className={`num ${r.avgLatencyMs > 2000 ? "lat-bad" : ""}`}>{r.avgLatencyMs ? `${r.avgLatencyMs.toLocaleString()} ms` : "—"}</td>
                       <td onClick={(e) => e.stopPropagation()}>
                         <span className="pda-wrap">
                           <a className="pda" href={explorerAddressUrl(r.pdaAddress)} target="_blank" rel="noreferrer" title="View PDA on Solana Explorer (devnet)">
@@ -150,7 +150,7 @@ export function Leaderboard() {
           </div>
           <div className="mono t-dim" style={{ fontSize: 11, padding: "10px 14px" }}>
             weights: T {SCORE_WEIGHTS.canary} · A {SCORE_WEIGHTS.agentChecks} · H {SCORE_WEIGHTS.humanReviews} · R {SCORE_WEIGHTS.retention}
-            {USE_MOCK_DATA ? " · mock scores, real routes, wallets and PDAs" : " · live /api/leaderboard"}
+            {USE_MOCK_DATA ? " · mock scores, real routes, wallets and PDAs" : " · live from the Vouch server (verified payments + on-chain ratings)"}
           </div>
         </div>
         <LiveFeed />

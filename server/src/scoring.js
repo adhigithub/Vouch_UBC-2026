@@ -106,6 +106,7 @@ export function scoreEndpoints(db, { defaultTestScore, asOf = null }) {
   const ratingsStmt = db.prepare("SELECT rater, rating FROM ratings WHERE endpoint_id = ? AND created_at <= ? ORDER BY id");
   const reviewsStmt = db.prepare("SELECT stars FROM reviews WHERE endpoint_id = ? AND created_at <= ? ORDER BY id");
   const payersStmt = db.prepare("SELECT from_wallet, COUNT(*) AS n FROM payments WHERE to_token_account = ? AND received_at <= ? GROUP BY from_wallet");
+  const lastRatingStmt = db.prepare("SELECT rating, reason, created_at AS at FROM ratings WHERE endpoint_id = ? AND created_at <= ? ORDER BY id DESC LIMIT 1");
 
   return endpoints.map((e) => {
     const ratings = ratingsStmt.all(e.id, until).map((r) => ({ rating: r.rating, weight: raterWeight(endpointsPaidBy[r.rater] ?? 0) }));
@@ -126,6 +127,9 @@ export function scoreEndpoints(db, { defaultTestScore, asOf = null }) {
       ...result,
       ratings: ratings.length,
       reviews: reviews.length,
+      // verified payments to this endpoint, and its newest agent rating (for the website's tags)
+      payments: Object.values(paymentsByWallet).reduce((a, n) => a + n, 0),
+      lastRating: lastRatingStmt.get(e.id, until) ?? null,
       testScoreIsDefault: !(e.id in testScores),
     };
   });

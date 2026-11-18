@@ -5,10 +5,15 @@
  * only the functions and types below, so moving from mock data to the live
  * Vouch server is a one-line change:
  *
- *   USE_MOCK_DATA = false   →  ${VOUCH_API_BASE_URL}/api/leaderboard
- *                              ${VOUCH_API_BASE_URL}/api/stream            (SSE)
- *                              ${VOUCH_API_BASE_URL}/api/agent/run-demo    (SSE)
- *                              ${VOUCH_API_BASE_URL}/review                (wallet-signed POST)
+ *   USE_MOCK_DATA = false   →  ${VOUCH_API_BASE_URL}/scores                 leaderboard
+ *                              ${VOUCH_API_BASE_URL}/endpoints/:api/:name    detail drawer
+ *                              ${VOUCH_API_BASE_URL}/payments                live feed (polled)
+ *                              ${VOUCH_API_BASE_URL}/review                  wallet-signed review
+ *                              ${AGENT_RUNNER_URL}/agent/run                 agent demo (streamed steps)
+ *
+ * Both base URLs go through the Vite dev-server proxy (vite.config.ts), so the
+ * browser never calls the backend directly (no CORS). Set VITE_USE_MOCK=true
+ * to run the site with simulated data and no backend.
  *
  * On-chain verification ALWAYS reads real Solana devnet through the free public
  * RPC, in mock mode too: PDAs are derived from the real Vouch program id.
@@ -23,11 +28,14 @@ import { ed25519 } from "@noble/curves/ed25519.js";
 const env = import.meta.env;
 
 /** Offline demo toggle. `false` = every call below goes to the live backend. */
-export const USE_MOCK_DATA = true;
+export const USE_MOCK_DATA = env.VITE_USE_MOCK === "true";
 
-export const VOUCH_API_BASE_URL: string = env.VITE_VOUCH_API_BASE_URL ?? "http://localhost:4000";
+/** Vouch server (server/), reached through the Vite proxy "/vouch" -> localhost:4000. */
+export const VOUCH_API_BASE_URL: string = env.VITE_VOUCH_API_BASE_URL ?? "/vouch";
+/** Agent runner (agent/runner.js), reached through the Vite proxy "/runner" -> localhost:4100. */
+export const AGENT_RUNNER_URL: string = env.VITE_AGENT_RUNNER_URL ?? "/runner";
 /** Where fake-apis/server.js runs (the paid x402 endpoints themselves). */
-export const FAKE_API_BASE_URL: string = env.VITE_FAKE_API_BASE_URL ?? "http://localhost:3001";
+export const FAKE_API_BASE_URL: string = env.VITE_FAKE_API_BASE_URL ?? "http://localhost:3005";
 /** Free public devnet RPC. No paid RPC provider anywhere. */
 export const SOLANA_RPC_URL: string = env.VITE_SOLANA_RPC_URL ?? "https://api.devnet.solana.com";
 export const SOLANA_CLUSTER = "devnet" as const;
@@ -49,7 +57,16 @@ export const TEST_CAP_MARGIN = 10;
 // Clean UI names → the real routes in fake-apis/server.js (`pathFor(id) = "/" + id`).
 // `endpointId` is the id the Vouch server and the on-chain PDA seed use.
 
-export type EndpointTag = "Verified Good" | "Wrong Schema" | "Empty Payload" | "Bad Format" | "Slow" | "Flaky";
+export type EndpointTag = "Verified Good" | "Unrated" | "Wrong Data" | "Wrong Schema" | "Empty Payload" | "Bad Format" | "Slow" | "Flaky";
+
+/** Live tag from the real data: trusted, unrated, or (if AVOID) why agents rejected it. */
+const REASON_TAG: Record<string, EndpointTag> = { sanity: "Wrong Data", format: "Bad Format", empty: "Empty Payload", slow: "Slow" };
+function liveTag(label: string | undefined, lastRating: { rating?: string; reason?: string } | null | undefined): EndpointTag | null {
+  if (label === "trusted") return "Verified Good";
+  if (label === "unrated") return "Unrated";
+  if (label === "avoid") return (lastRating?.reason && REASON_TAG[lastRating.reason]) || "Flaky";
+  return null;
+}
 
 export interface RegistryEntry {
   key: string;
@@ -90,6 +107,11 @@ export const ENDPOINT_REGISTRY = reg({
     endpointId: "weather-api-4/current", route: "/weather-api-4/current", displayPath: "/weather-api-4/current",
     displayName: "WeatherText Feed", tag: "Bad Format", category: "weather", priceUsdc: 0.01,
     receivingWallet: "BBTmvGQFnE6bTFdZmtFpTXXdyjrDoH7mnKV3XXaShDwU",
+  },
+  "weather-forecast-1": {
+    endpointId: "weather-api-1/forecast", route: "/weather-api-1/forecast", displayPath: "/weather/forecast",
+    displayName: "Weather Prime Forecast", tag: "Verified Good", category: "weather", priceUsdc: 0.01,
+    receivingWallet: "8gX4GSt833T5a3DJn7buZg7B7qL42TtV8XdxGWEBD5EL",
   },
   "crypto-api-1": {
     endpointId: "crypto-api-1/price", route: "/crypto-api-1/price", displayPath: "/defi/prices",
@@ -375,6 +397,11 @@ const MOCK_STATS: Record<string, MockStats> = {
     lastChecks: { nonEmpty: true, schema: true, sanity: true, latencyMs: 198 },
     sampleResponse: { city: "Austin", temperature: 71.4, unit: "F", humidity: 48, windMph: 7.2, condition: "Clear", source: "open-meteo" },
   },
+  "weather-forecast-1": {
+    scoreBreakdown: { canary: 90, agentChecks: 95, humanReviews: null, retention: null }, verifiedCalls: 640, avgLatencyMs: 240, blockedSybilReviews: 4,
+    lastChecks: { nonEmpty: true, schema: true, sanity: true, latencyMs: 231 },
+    sampleResponse: { city: "Tokyo", unit: "F", days: [{ date: "2026-11-18", high: 68.1, low: 48.2, condition: "clear" }] },
+  },
   "crypto-api-1": {
     scoreBreakdown: { canary: 92, agentChecks: 94, humanReviews: 86, retention: 88 }, verifiedCalls: 2917, avgLatencyMs: 341, blockedSybilReviews: 12,
     lastChecks: { nonEmpty: true, schema: true, sanity: true, latencyMs: 322 },
@@ -500,7 +527,7 @@ function setStreamStatus(s: StreamStatus) {
 }
 
 let mockTimer: ReturnType<typeof setInterval> | null = null;
-let liveSource: EventSource | null = null;
+let livePoll: ReturnType<typeof setInterval> | null = null;
 
 /** Starts the mock firehose, or the shared SSE connection to /api/stream. */
 function ensureStream() {
@@ -517,26 +544,33 @@ function ensureStream() {
     }, 4200);
     return;
   }
-  if (liveSource) return;
+  // Live: the Vouch server has no push stream, so poll its verified payments
+  // every few seconds and announce the new ones (and refresh the board).
+  if (livePoll) return;
   setStreamStatus("connecting");
-  liveSource = new EventSource(`${VOUCH_API_BASE_URL}/api/stream`);
-  liveSource.onopen = () => setStreamStatus("open");
-  liveSource.onerror = () => setStreamStatus("reconnecting"); // EventSource retries on its own
-  const handle = (type: string) => (ev: MessageEvent) => {
-    const data = parseJson(ev.data);
-    if (!data || typeof data !== "object") return;
-    const kind = String(data.type ?? data.event ?? type).toLowerCase();
-    const payment = normalizePayment(data.payment ?? data);
-    if (payment && /payment|transfer|quicknode|message/.test(kind)) emitPayment(payment);
-    emitLeaderboard(); // any payment / rating / review / score event can move the board
+  const seen = new Set<string>();
+  let first = true;
+  const tick = async () => {
+    try {
+      const rows = await api<Json[]>("/payments?limit=20");
+      const fresh = rows.map(normalizePayment).filter((p): p is PaymentEvent => !!p && !seen.has(p.paymentId));
+      fresh.forEach((p) => seen.add(p.paymentId));
+      if (!first) fresh.reverse().forEach(emitPayment); // oldest first, so the newest ends on top
+      first = false;
+      setStreamStatus("open");
+      emitLeaderboard();
+    } catch {
+      setStreamStatus("reconnecting");
+    }
   };
-  for (const t of ["message", "payment", "rating", "review", "score", "leaderboard"]) liveSource.addEventListener(t, handle(t) as EventListener);
+  tick();
+  livePoll = setInterval(tick, 4000);
 }
 
 function maybeStopStream() {
   if (paymentListeners.size || leaderboardListeners.size || statusListeners.size) return;
   if (mockTimer) clearInterval(mockTimer), (mockTimer = null);
-  if (liveSource) liveSource.close(), (liveSource = null);
+  if (livePoll) clearInterval(livePoll), (livePoll = null);
 }
 
 /** Live feed of verified payments (mock firehose or /api/stream). Returns unsubscribe. */
@@ -615,7 +649,7 @@ function normalizeRow(r: Json): EndpointSummary | null {
     registryKey: e?.key ?? id,
     endpointId: id,
     name: e?.displayName ?? r.name ?? id,
-    tag: e?.tag ?? r.tag ?? (vouchScore >= TRUST_CUTOFF ? "Verified Good" : "Flaky"),
+    tag: liveTag(r.label, r.lastRating) ?? e?.tag ?? r.tag ?? (vouchScore >= TRUST_CUTOFF ? "Verified Good" : "Flaky"),
     category: e?.category ?? (id.startsWith("crypto") ? "crypto" : "weather"),
     priceUsdc: num(r.priceUsdc, r.price) ?? e?.priceUsdc ?? 0.01,
     receivingWallet: r.receivingWallet ?? r.payTo ?? r.pay_to ?? e?.receivingWallet ?? "",
@@ -649,9 +683,10 @@ export async function fetchLeaderboard(): Promise<EndpointSummary[]> {
     await sleep(150);
     return REGISTRY.map(summarizeMock).sort((a, b) => b.vouchScore - a.vouchScore);
   }
-  const body = await api<Json>("/api/leaderboard");
+  const body = await api<Json>("/scores");
   const rows: Json[] = Array.isArray(body) ? body : body.leaderboard ?? body.endpoints ?? body.rows ?? [];
-  return rows.map(normalizeRow).filter((r): r is EndpointSummary => !!r).sort((a, b) => b.vouchScore - a.vouchScore);
+  // Same order agents use (server /best): higher score first, then the cheaper one.
+  return rows.map(normalizeRow).filter((r): r is EndpointSummary => !!r).sort((a, b) => b.vouchScore - a.vouchScore || a.priceUsdc - b.priceUsdc);
 }
 
 export async function fetchEndpointDetails(endpointUrl: string): Promise<EndpointDetails> {
@@ -671,12 +706,12 @@ export async function fetchEndpointDetails(endpointUrl: string): Promise<Endpoin
     ...(d.recentRatings ?? []).map((r: Json) => ({
       id: r.paymentId, source: "agent" as const, rater: r.rater,
       rating: r.rating === "good" ? 100 : r.rating === "bad" ? 0 : Number(r.rating), comment: r.reason ?? "",
-      txSig: r.paymentId, createdAt: r.createdAt ?? now(),
+      txSig: r.onchainTx && r.onchainTx.length > 60 ? r.onchainTx : r.paymentId, createdAt: Date.parse(r.at ?? "") || now(),
     })),
     ...(d.recentReviews ?? []).map((r: Json) => ({
       id: r.paymentId, source: (r.source === "grok" ? "grok" : "human") as Review["source"], rater: r.reviewer ?? r.reviewerWallet,
       rating: num(r.rating) ?? Math.round(((r.stars - 1) / 4) * 100), comment: r.comment ?? "",
-      txSig: r.paymentId ?? r.txSig, createdAt: r.createdAt ?? now(),
+      txSig: r.paymentId ?? r.txSig, createdAt: Date.parse(r.at ?? "") || now(),
     })),
   ].sort((a, b) => b.createdAt - a.createdAt);
   return {
@@ -739,8 +774,22 @@ export async function submitReview(sub: ReviewSubmission, signer: WalletSigner |
       note: "mock: signature verified in-browser; payer-match check skipped" };
   }
 
+  // Live: the server checks its own signed text (server/src/signatures.js reviewMessage)
+  // and takes 1-5 stars, so sign that instead of the demo challenge above.
+  const target = resolveEndpoint(sub.endpointUrl);
+  const endpointId = target?.endpointId ?? sub.endpointUrl.replace(/^\//, "");
+  const stars = Math.max(1, Math.min(5, 1 + Math.round(sub.rating / 25)));
+  const serverMessage = ["vouch-review-v1", endpointId, txSig, String(stars), sub.comment ?? ""].join("\n");
+  let serverSig: Uint8Array;
   try {
-    const r = await api<Json>("/review", { method: "POST", body: JSON.stringify(payload) });
+    serverSig = await signer.signMessage(new TextEncoder().encode(serverMessage));
+  } catch (err) {
+    return { ok: false, code: "signature_rejected", message: (err as Error).message || "The wallet declined to sign.", payload };
+  }
+  const body = { endpointId, paymentId: txSig, stars, comment: sub.comment ?? "", source: "web", reviewer: signer.publicKey, signature: bs58.encode(serverSig) };
+
+  try {
+    const r = await api<Json>("/review", { method: "POST", body: JSON.stringify(body) });
     emitLeaderboard();
     return { ok: true, endpointUrl: sub.endpointUrl, newScore: num(r.score, r.vouchScore), label: r.label ?? null, onchainTx: r.onchainTx ?? "", payload };
   } catch (err) {
@@ -755,6 +804,10 @@ export async function submitReview(sub: ReviewSubmission, signer: WalletSigner |
 export function runAgentLoop(task: "weather" = "weather"): AsyncGenerator<AgentTraceStep> {
   return USE_MOCK_DATA ? runMockAgentLoop(task) : runLiveAgentLoop();
 }
+
+/** Which real task the live demo runs (override with VITE_AGENT_TASK / VITE_AGENT_PARAMS). */
+const LIVE_TASK: string = env.VITE_AGENT_TASK ?? "weather";
+const LIVE_PARAMS: Record<string, string> = parseJson(env.VITE_AGENT_PARAMS ?? "") ?? { city: "Austin" };
 
 const KIND_RULES: [RegExp, TraceKind][] = [
   [/quer|lookup|best/i, "query"],
@@ -780,11 +833,88 @@ function toTraceStep(eventName: string, raw: string): AgentTraceStep {
   return { kind, status, text, detail: typeof detail === "string" ? detail : JSON.stringify(detail), delayMs: 0 };
 }
 
+const usd = (n: unknown) => `$${Number(n ?? 0).toFixed(2)}`;
+const nameOf = (id: string) => resolveEndpoint(id)?.displayPath ?? id;
+
+/** Turns one agent-runner event (LIVE_FLOW_GUIDE.md section 5) into a trace step, or null to skip it. */
+function runnerEventToStep(e: Json): AgentTraceStep | null {
+  const step = (kind: TraceKind, status: AgentTraceStep["status"], text: string, detail?: string): AgentTraceStep => ({ kind, status, text, detail, delayMs: 0 });
+  switch (e.type) {
+    case "start":
+      return step("info", "info", `agent ${shortAddr(e.wallet)} starting task: ${e.task} ${new URLSearchParams(e.params ?? {})}`, e.payments ? "real USDC payments on Solana devnet" : "free mode (no payments)");
+    case "candidates":
+      return step("query", "info", `querying Vouch · GET /best?task=${LIVE_TASK}`,
+        (e.list ?? []).map((c: Json) => `${nameOf(c.endpointId).padEnd(26)} ${String(c.score ?? "-").padStart(3)}  ${c.label}  ${usd(c.price)}`).join("\n"));
+    case "skip":
+      return step("block", "fail", `refusing ${nameOf(e.endpointId)}: ${e.reason}`, "nothing spent");
+    case "buy":
+      return step("request", "info", `buying from ${nameOf(e.endpointId)} (score ${e.score ?? "-"}, ${usd(e.price)})`, "HTTP 402 → pay with x402");
+    case "paid":
+      return step("pay", "ok", `paid in USDC on Solana → ${nameOf(e.endpointId)} (spent ${usd(e.spent)} so far)`, `tx ${e.paymentId}`);
+    case "not_charged":
+      return step("pay", "warn", `couldn't pay ${nameOf(e.endpointId)} (HTTP ${e.status})`, e.error ?? undefined);
+    case "checks": {
+      const marks = (e.results ?? []).map((r: Json) => `${r.check} ${r.skipped ? "·" : r.ok ? "✓" : "✗"}`).join("  ");
+      return step("validate", e.rating === "good" ? "ok" : "fail", `running 4 checks · ${marks}`, e.rating === "good" ? "GOOD" : `BAD: ${e.reason}`);
+    }
+    case "verifying":
+      return e.attempt === 0 ? step("info", "info", "waiting for QuickNode to confirm the payment on-chain…") : null;
+    case "verified":
+      return step("info", "ok", `payment confirmed${e.source === "quicknode" ? " by QuickNode Stream" : ""}`);
+    case "rated":
+      return step("submit", "ok", `rated ${String(e.rating).toUpperCase()} · stamped on Solana · ${nameOf(e.endpointId)} now ${e.score} ${e.label}`,
+        e.onchainTx ? `tx ${e.onchainTx}` : "saving to Solana…");
+    case "rate_failed":
+      return step("submit", "fail", `rating not accepted: ${e.error}`, e.error === "payment_not_verified" ? "QuickNode didn't confirm the payment in time (is the Stream running?)" : undefined);
+    case "done":
+      return step("done", "ok", `Task complete. Spent ${usd(e.spent)}.`, JSON.stringify(e.result));
+    case "failed":
+      return step("done", "fail", `Stopped: ${e.reason}`, e.spent != null ? `spent ${usd(e.spent)}` : undefined);
+    default:
+      return null;
+  }
+}
+
 /**
- * Opens an EventSource on /api/agent/run-demo, which starts the real agent on the
- * backend, and yields each streamed step until the server sends a done event.
+ * Starts the real agent through the agent runner (POST /agent/run) and yields
+ * each step as it streams back, until the run is done.
  */
-export async function* runLiveAgentLoop(url = `${VOUCH_API_BASE_URL}/api/agent/run-demo`): AsyncGenerator<AgentTraceStep> {
+export async function* runLiveAgentLoop(): AsyncGenerator<AgentTraceStep> {
+  const url = `${AGENT_RUNNER_URL}/agent/run`;
+  let res: Response;
+  try {
+    res = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ task: LIVE_TASK, params: LIVE_PARAMS }) });
+  } catch {
+    throw new Error(`Couldn't reach the agent runner (${url}). Is \`npm run runner\` running in agent/?`);
+  }
+  if (!res.ok || !res.body) {
+    const b = await res.json().catch(() => ({}));
+    throw new Error(b.hint ?? b.error ?? `agent runner -> HTTP ${res.status}`);
+  }
+  const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
+  let buf = "";
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += value;
+      let i;
+      while ((i = buf.indexOf("\n\n")) >= 0) {
+        const chunk = buf.slice(0, i);
+        buf = buf.slice(i + 2);
+        const data = chunk.split("\n").filter((l) => l.startsWith("data:")).map((l) => l.slice(5).trim()).join("");
+        const ev = parseJson(data);
+        const step = ev && runnerEventToStep(ev);
+        if (step) yield step;
+      }
+    }
+  } finally {
+    emitLeaderboard();
+  }
+}
+
+/** Old EventSource client, kept for reference: a backend that streams steps over GET. */
+export async function* runLiveAgentLoopViaEventSource(url = `${VOUCH_API_BASE_URL}/api/agent/run-demo`): AsyncGenerator<AgentTraceStep> {
   const queue: (AgentTraceStep | Error | null)[] = [];
   let wake: (() => void) | null = null;
   const push = (x: AgentTraceStep | Error | null) => {
