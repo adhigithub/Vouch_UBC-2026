@@ -10,6 +10,9 @@
 //   passed -> T moves halfway up toward 100     (80 -> 90 -> 95 ...)
 //   failed -> T moves halfway down toward 0     (80 -> 40 -> 20 ...)
 //
+// Before failing an API it re-tests it once: only a second failure counts, so a
+// one-off hiccup (slow network, slow payment settlement) doesn't punish an honest API.
+//
 // So scams are caught before customers' agents pay them, and APIs that get fixed
 // earn their way back (agents stop buying from an API below 60, so without the
 // tester its score could never recover).
@@ -53,35 +56,52 @@ export async function testRound(wallet, round = 0, emit = () => {}) {
   const scores = Object.fromEntries((await getJson(`${VOUCH_URL}/scores`)).map((s) => [s.endpointId, s]));
   const results = [];
 
-  for (const e of catalog) {
-    const samples = SAMPLES[e.task] ?? [{}];
-    const params = samples[round % samples.length];
+  // Buy once and run the checks. Returns null if our own payment failed.
+  async function check(e, params) {
     let result;
     try {
       result = await wallet.buy(`${e.url}?${new URLSearchParams(params)}`);
     } catch (err) {
       result = { status: 0, body: "", ms: 0, paid: false, error: err.message };
     }
+    if (!result.paid && result.error) return { skipped: result.error };
+    return { result, verdict: await runChecks(result, { task: e.task, schema: e.schema, params }) };
+  }
+
+  for (const e of catalog) {
+    const samples = SAMPLES[e.task] ?? [{}];
+    const params = samples[round % samples.length];
+    let t = await check(e, params);
     // If our payment didn't go through (e.g. no connection to Solana), that's not
     // the API's fault: skip it this round instead of lowering its score.
-    if (!result.paid && result.error) {
-      console.log(`  ? ${e.endpointId}: couldn't test (${result.error})`);
-      emit({ type: "test_skipped", endpointId: e.endpointId, why: result.error });
+    if (t.skipped) {
+      console.log(`  ? ${e.endpointId}: couldn't test (${t.skipped})`);
+      emit({ type: "test_skipped", endpointId: e.endpointId, why: t.skipped });
       continue;
     }
-
-    const verdict = await runChecks(result, { task: e.task, schema: e.schema, params });
+    // Failed? Double-check once with another input before marking it failed.
+    let rechecked = false;
+    if (t.verdict.rating !== "good") {
+      const again = await check(e, samples[(round + 1) % samples.length]);
+      if (!again.skipped) {
+        t = again;
+        rechecked = true;
+      }
+    }
+    const { result, verdict } = t;
     const passed = verdict.rating === "good";
     const from = scores[e.endpointId]?.parts?.T ?? 80;
     const to = nextTestScore(from, passed);
-    const why = passed ? "passed all 4 checks" : `failed: it ${REASONS[verdict.reason] ?? "failed a check"}`;
+    const why = passed
+      ? rechecked ? "passed all 4 checks (on a re-test, after a one-off failure)" : "passed all 4 checks"
+      : `failed twice: it ${REASONS[verdict.reason] ?? "failed a check"}`;
     await getJson(`${VOUCH_URL}/admin/test-score`, {
       method: "POST",
       headers: { "content-type": "application/json", "x-admin-token": ADMIN_TOKEN },
       body: JSON.stringify({ endpointId: e.endpointId, score: to, reason: `tester bot ${why} (test score ${from} -> ${to})` }),
     });
     console.log(`  ${passed ? "✓" : "✗"} ${e.endpointId.padEnd(24)} ${why.padEnd(48)} T ${from} -> ${to}`);
-    const r = { endpointId: e.endpointId, passed, reason: verdict.reason ?? null, from, to, paymentId: result.paymentId };
+    const r = { endpointId: e.endpointId, passed, reason: verdict.reason ?? null, rechecked, from, to, paymentId: result.paymentId };
     results.push(r);
     emit({ type: "test", ...r });
   }

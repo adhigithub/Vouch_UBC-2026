@@ -3,6 +3,7 @@ import { useLeaderboard } from "../hooks/useScroll";
 import {
   SCORE_WEIGHTS,
   SOLANA_RPC_URL,
+  TASKS,
   USE_MOCK_DATA,
   VOUCH_PROGRAM_ID,
   explorerAddressUrl,
@@ -78,6 +79,11 @@ export function Leaderboard() {
   const [inspect, setInspect] = useState<string | null>(null);
   const prev = useRef<Record<string, number>>({});
   const [flash, setFlash] = useState<Record<string, number>>({});
+  // Each task is its own ranking: weather APIs compete with weather APIs, not crypto ones.
+  const [task, setTask] = useState<string>(TASKS[0].id);
+  const shown = rows ? (task === "all" ? rows : rows.filter((r) => r.task === task)) : null;
+  const countFor = (id: string) => rows?.filter((r) => id === "all" || r.task === id).length ?? 0;
+  const taskLabel = (id: string) => TASKS.find((t) => t.id === id)?.label ?? id;
 
   useEffect(() => {
     if (!rows) return;
@@ -97,6 +103,13 @@ export function Leaderboard() {
       <p className="act-lede">
         Scores come from verified x402 payments only. Click a row for the 4-source breakdown. Hit Verify On-Chain to read its PDA straight from Solana devnet.
       </p>
+      <div className="lb-tabs" role="tablist" aria-label="Rank APIs by task">
+        {[...TASKS, { id: "all", label: "All" }].map((t) => (
+          <button key={t.id} role="tab" aria-selected={task === t.id} className={`lb-tab ${task === t.id ? "on" : ""}`} onClick={() => setTask(t.id)}>
+            {t.label} <span className="lb-count">{countFor(t.id)}</span>
+          </button>
+        ))}
+      </div>
       <div className="lb-grid">
         <div className="lb glass">
           <div className="lb-scroll">
@@ -110,7 +123,8 @@ export function Leaderboard() {
               <tbody>
                 {error && <tr><td colSpan={6} className="t-red mono">Couldn't reach the Vouch server: {error}</td></tr>}
                 {!rows && !error && <tr><td colSpan={6} className="t-dim mono">{USE_MOCK_DATA ? "loading…" : "GET /scores …"}</td></tr>}
-                {rows?.map((r, i) => (
+                {shown?.length === 0 && <tr><td colSpan={6} className="t-dim mono">No APIs for this task yet.</td></tr>}
+                {shown?.map((r, i) => (
                   <Fragment key={r.endpointUrl}>
                     <tr
                       key={`${r.endpointUrl}-${flash[r.endpointUrl] ?? 0}`}
@@ -123,6 +137,7 @@ export function Leaderboard() {
                       <td className="rank">{String(i + 1).padStart(2, "0")}</td>
                       <td className="ep">
                         <span className="ep-name">{r.name}</span> <TagChip tag={r.tag} />
+                        {task === "all" && <span className="lb-task">{taskLabel(r.task)}</span>}
                         <small>{r.endpointUrl}{r.route !== r.endpointUrl && <> → {r.route}</>} · {r.priceUsdc} USDC</small>
                       </td>
                       <td><Gauge score={r.vouchScore} /></td>

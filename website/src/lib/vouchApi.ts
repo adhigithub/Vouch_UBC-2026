@@ -183,6 +183,8 @@ export interface EndpointSummary {
   name: string;
   tag: EndpointTag;
   category: RegistryEntry["category"];
+  /** What the API is for (the server's task): each task is ranked separately. */
+  task: VouchTask;
   priceUsdc: number;
   receivingWallet: string;
   pdaAddress: string;
@@ -297,6 +299,17 @@ export function computeVouchScore(b: ScoreBreakdown, cap = true): number {
   if (cap && b.canary !== null) score = Math.min(score, b.canary + TEST_CAP_MARGIN);
   return Math.max(0, Math.min(100, score));
 }
+
+export type VouchTask = "weather" | "weather-forecast" | "crypto-price" | (string & {});
+/** Task tabs for the leaderboard, in display order. */
+export const TASKS: { id: VouchTask; label: string }[] = [
+  { id: "weather", label: "Weather" },
+  { id: "weather-forecast", label: "Forecast" },
+  { id: "crypto-price", label: "Crypto prices" },
+];
+/** The task an API serves: the server's value if we have it, else from its id. */
+export const taskOf = (endpointId: string, serverTask?: string): VouchTask =>
+  serverTask || (endpointId.startsWith("crypto") ? "crypto-price" : endpointId.endsWith("/forecast") ? "weather-forecast" : "weather");
 
 export const labelFor = (score: number): TrustLabel => (score >= TRUST_CUTOFF ? "trusted" : "avoid");
 
@@ -478,7 +491,7 @@ function summarizeMock(e: RegistryEntry): EndpointSummary {
 function fromRegistry(e: RegistryEntry) {
   return {
     endpointUrl: e.displayPath, route: e.route, registryKey: e.key, endpointId: e.endpointId, name: e.displayName, tag: e.tag,
-    category: e.category, priceUsdc: e.priceUsdc, receivingWallet: e.receivingWallet, pdaAddress: endpointPda(e.endpointId),
+    category: e.category, task: taskOf(e.endpointId), priceUsdc: e.priceUsdc, receivingWallet: e.receivingWallet, pdaAddress: endpointPda(e.endpointId),
   };
 }
 
@@ -651,6 +664,7 @@ function normalizeRow(r: Json): EndpointSummary | null {
     name: e?.displayName ?? r.name ?? id,
     tag: liveTag(r.label, r.lastRating) ?? e?.tag ?? r.tag ?? (vouchScore >= TRUST_CUTOFF ? "Verified Good" : "Flaky"),
     category: e?.category ?? (id.startsWith("crypto") ? "crypto" : "weather"),
+    task: taskOf(id, r.task),
     priceUsdc: num(r.priceUsdc, r.price) ?? e?.priceUsdc ?? 0.01,
     receivingWallet: r.receivingWallet ?? r.payTo ?? r.pay_to ?? e?.receivingWallet ?? "",
     pdaAddress: r.pdaAddress ?? endpointPda(id),
@@ -1030,7 +1044,7 @@ export function streamAgentRun(task: string, params: Record<string, string>): As
 
 /** One tester-bot event: an API it tested, one it couldn't test, or the round starting/ending. */
 export interface TesterEvent {
-  type: "test_start" | "test" | "test_skipped" | "test_done" | "test_failed";
+  type: "test_queued" | "test_start" | "test" | "test_skipped" | "test_done" | "test_failed";
   at: string;
   [key: string]: any;
 }

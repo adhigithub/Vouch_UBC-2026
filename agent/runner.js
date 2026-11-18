@@ -142,11 +142,16 @@ async function runTesterRound(emit = () => {}) {
 
 async function testNow(req, res) {
   if (!process.env.TESTER_SECRET_KEY) return json(res, 503, { error: "tester_not_set_up", hint: "Run: node tester-setup.js" });
-  if (testing) return json(res, 409, { error: "busy", hint: "The tester bot is already running a round." });
   res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
   const emit = (event) => !res.writableEnded && res.write(`data: ${JSON.stringify({ at: new Date().toISOString(), ...event })}
 
 `);
+  // A round is already going (e.g. the background one, which may have started before
+  // an API was changed): queue a fresh round to start the moment it ends.
+  if (testing) {
+    emit({ type: "test_queued" });
+    while (testing) await new Promise((r) => setTimeout(r, 500));
+  }
   try {
     await runTesterRound(emit);
   } finally {

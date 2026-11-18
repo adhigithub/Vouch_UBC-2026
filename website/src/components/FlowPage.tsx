@@ -426,7 +426,9 @@ export function FlowPage() {
                 </div>
               )}
               <div className="fl-btns">
-                <button className="fl-chip" onClick={runTester} disabled={testing || tester?.running}>{testing ? "Testing every API…" : "🔍 Run tester bot now"}</button>
+                <button className="fl-chip" onClick={runTester} disabled={testing}>
+                  {!testing ? "🔍 Run tester bot now" : tests.some((t) => t.type === "test_start") ? "Testing every API…" : "⏳ Queued: starts when the current round ends"}
+                </button>
               </div>
               {shownTests.length > 0 && (
                 <ul className="fl-tests">

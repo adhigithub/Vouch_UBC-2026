@@ -555,3 +555,10 @@ main.flow-main { padding-left: 0; }
 .fl-tests { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-family: var(--mono); font-size: 12px; }
 .fl-tests li.ok b { color: var(--green); }
 .fl-tests li.fail b { color: var(--crimson); }
+
+.lb-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 26px; }
+.lb-tab { background: transparent; border: 1px solid var(--line-2); border-radius: 999px; padding: 6px 14px; font-size: 14px; color: var(--ink-2); }
+.lb-tab.on { color: var(--ink); border-color: var(--cyan); background: rgba(56, 189, 248, 0.12); }
+.lb-count { font-family: var(--mono); font-size: 11px; color: var(--ink-3); margin-left: 4px; }
+.lb-task { margin-left: 6px; font-family: var(--mono); font-size: 11px; color: var(--ink-3); border: 1px solid var(--line); border-radius: 6px; padding: 1px 6px; }
+.lb-tabs + .lb-grid { margin-top: 14px; }
