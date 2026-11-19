@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="website/public/assets/vouch-logo.png" alt="Vouch" width="110" />
+<img src="website/public/assets/vouch-mark.svg" alt="Vouch logo" width="120" />
 
 # Vouch
 
