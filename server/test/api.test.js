@@ -274,6 +274,24 @@ test("parser: finds the payer (transfer authority, not the fee payer) and ignore
   assert.equal(paymentsFromTransaction(tx, { mint: "OTHER", tokenAccounts: new Set(["ATA_GOOD"]) }).length, 0);
 });
 
+// ---------- disputes ----------
+
+test("disputes: anyone can flag a rating; it shows on the endpoint and in /grok, scores unchanged", async () => {
+  const before = (await get("/scores")).find((e) => e.endpointId === "weather-junk/current").score;
+  assert.equal((await post("/disputes", { paymentId: "never-rated", reason: "this is unfair" })).status, 404);
+  assert.equal((await post("/disputes", { paymentId: "p-junk-1", reason: "no" })).status, 400);
+  const r = await post("/disputes", { paymentId: "p-junk-1", reason: "My API was down for maintenance, it's fixed now." });
+  assert.equal(r.status, 200);
+  assert.equal(r.body.status, "open");
+
+  const ep = await get("/endpoints/weather-junk/current");
+  assert.equal(ep.recentRatings.find((x) => x.paymentId === "p-junk-1").disputes.length, 1);
+  assert.equal(ep.score, before); // no score effect yet
+  const grok = await (await fetch(base + "/grok")).text();
+  assert.match(grok, /OPEN DISPUTES[\s\S]*weather-junk\/current: BAD rating .* disputed: "My API was down for maintenance/);
+  assert.equal((await get("/disputes")).length, 1);
+});
+
 // ---------- demo reset (last: it clears everything) ----------
 
 test("admin: demo reset needs the token, then clears ratings, payments and scores", async () => {

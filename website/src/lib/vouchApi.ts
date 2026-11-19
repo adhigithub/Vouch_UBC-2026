@@ -203,6 +203,10 @@ export interface Review {
   comment: string;
   txSig: string;
   createdAt: number;
+  /** Payment this rating is tied to (agent ratings); used to dispute it. */
+  paymentId?: string;
+  /** Open disputes: people flagging this rating as unfair (no score effect yet). */
+  disputes?: { reason: string; at: string }[];
 }
 
 export interface EndpointDetails extends EndpointSummary {
@@ -715,6 +719,7 @@ export async function fetchEndpointDetails(endpointUrl: string): Promise<Endpoin
       id: r.paymentId, source: "agent" as const, rater: r.rater,
       rating: r.rating === "good" ? 100 : r.rating === "bad" ? 0 : Number(r.rating), comment: r.reason ?? "",
       txSig: r.onchainTx && r.onchainTx.length > 60 ? r.onchainTx : r.paymentId, createdAt: Date.parse(r.at ?? "") || now(),
+      paymentId: r.paymentId, disputes: r.disputes ?? [],
     })),
     ...(d.recentReviews ?? []).map((r: Json) => ({
       id: r.paymentId, source: (r.source === "grok" ? "grok" : "human") as Review["source"], rater: r.reviewer ?? r.reviewerWallet,
@@ -729,6 +734,20 @@ export async function fetchEndpointDetails(endpointUrl: string): Promise<Endpoin
     lastChecks: d.lastChecks ?? { nonEmpty: true, schema: true, sanity: true, latencyMs: base.avgLatencyMs },
     sampleResponse: d.sampleResponse ?? null,
   };
+}
+
+/** Flag an agent rating as unfair. Saved and shown publicly as "under review"; no score effect yet. */
+export async function submitDispute(paymentId: string, reason: string): Promise<{ ok: true } | { ok: false; message: string }> {
+  if (USE_MOCK_DATA) return { ok: true };
+  try {
+    await api<Json>("/disputes", { method: "POST", body: JSON.stringify({ paymentId, reason }) });
+    emitLeaderboard();
+    return { ok: true };
+  } catch (err) {
+    const e = err as Error & { body?: Json };
+    const code = e.body?.error ?? "";
+    return { ok: false, message: code === "reason_must_be_5_to_500_characters" ? "Please write a reason (at least 5 characters)." : e.message };
+  }
 }
 
 export async function fetchRecentPayments(limit = 12): Promise<PaymentEvent[]> {

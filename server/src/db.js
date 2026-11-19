@@ -6,6 +6,7 @@
 //   reviews      human 1-5 star reviews, one per payment
 //   test_scores  the tester bot's latest score per endpoint (T)
 //   score_history  every time an endpoint's score or label changed, and why (for /grok "recent changes")
+//   disputes     people flagging a rating as unfair (shown publicly; no score effect yet)
 import { DatabaseSync } from "node:sqlite";
 
 export function openDb(file = ":memory:") {
@@ -73,6 +74,16 @@ export function openDb(file = ":memory:") {
       at           TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS score_history_endpoint ON score_history(endpoint_id, id);
+
+    CREATE TABLE IF NOT EXISTS disputes (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      payment_id   TEXT NOT NULL,      -- the rating being disputed (ratings are one per payment)
+      endpoint_id  TEXT NOT NULL,
+      reason       TEXT NOT NULL,
+      status       TEXT NOT NULL DEFAULT 'open',
+      created_at   TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS disputes_payment ON disputes(payment_id);
 
     CREATE TABLE IF NOT EXISTS test_scores (
       endpoint_id  TEXT PRIMARY KEY,

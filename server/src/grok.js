@@ -48,13 +48,14 @@ export function recommend(scores, task) {
  * @param {object} d
  * @param {object[]} d.scores         scoreEndpoints() output
  * @param {object[]} [d.changes]      recentChanges() output, newest first: { endpointId, from, to, cause, proof, at }
+ * @param {object[]} [d.disputes]     open disputes, newest first: { endpointId, reason, at, rating, ratingReason }
  * @param {object[]} d.ratings        recent ratings, newest first: { endpointId, rating, reason, rater, at, explorer }
  * @param {object[]} d.payments       recent verified payments, newest first: { endpointId, amount, from, receivedAt, source }
  * @param {object|null} d.chain       { programId, program } or null
  * @param {string} d.baseUrl          public address of this server
  * @param {Date} [d.now]
  */
-export function renderGrokPage({ scores, changes = [], ratings, payments, chain, baseUrl, now = new Date() }) {
+export function renderGrokPage({ scores, changes = [], disputes = [], ratings, payments, chain, baseUrl, now = new Date() }) {
   const out = [];
   const line = (s = "") => out.push(s);
   const tasks = [...new Set(scores.map((s) => s.task))].sort();
@@ -135,6 +136,14 @@ export function renderGrokPage({ scores, changes = [], ratings, payments, chain,
       });
     line();
   }
+
+  line("OPEN DISPUTES (people flagging a rating as unfair; under review, scores not changed yet)");
+  if (!disputes.length) line("- None.");
+  for (const d of disputes) {
+    const what = d.rating === "bad" ? `BAD rating (${REASONS[d.ratingReason] ?? d.ratingReason ?? "failed checks"})` : `${String(d.rating ?? "").toUpperCase()} rating`;
+    line(`- ${when(d.at)}  ${d.endpointId}: ${what} disputed: "${String(d.reason).slice(0, 160)}"`);
+  }
+  line();
 
   line("RECENT AGENT RATINGS (newest first, each tied to a real payment)");
   if (!ratings.length) line("- None yet.");

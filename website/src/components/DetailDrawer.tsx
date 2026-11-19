@@ -6,7 +6,9 @@ import {
   fetchEndpointDetails,
   shortAddr,
   subscribeLeaderboard,
+  submitDispute,
   type EndpointDetails,
+  type Review,
   type ScorePillar,
 } from "../lib/vouchApi";
 import { TagChip } from "./Leaderboard";
@@ -17,6 +19,46 @@ const NAMES: Record<ScorePillar, [string, string]> = {
   humanReviews: ["Human reviews (wallet-signed)", "H"],
   retention: ["Repeat wallet retention", "R"],
 };
+
+/** 🚩 Dispute: flag an agent rating as unfair. Shown publicly as "under review". */
+function DisputeBox({ review }: { review: Review }) {
+  const [open, setOpen] = useState(false);
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  if (!review.paymentId || review.source !== "agent") return null;
+  const send = async () => {
+    setBusy(true);
+    const r = await submitDispute(review.paymentId!, reason);
+    setBusy(false);
+    if (r.ok) {
+      setOpen(false);
+      setReason("");
+      setMsg("Dispute sent: it's now public and under review.");
+    } else setMsg(r.message);
+  };
+  return (
+    <div className="dispute">
+      {(review.disputes ?? []).map((d, i) => (
+        <div key={i} className="dispute-open">⚠️ Disputed, under review: “{d.reason}”</div>
+      ))}
+      {msg && <div className="t-dim mono" style={{ fontSize: 11 }}>{msg}</div>}
+      {open ? (
+        <div className="dispute-form">
+          <textarea className="input" rows={2} maxLength={500} placeholder="Why is this rating unfair? e.g. our API was down for 5 minutes for maintenance; it's fixed now."
+            value={reason} onChange={(e) => setReason(e.target.value)} />
+          <div style={{ display: "flex", gap: 8 }}>
+            <button className="icon-btn" onClick={send} disabled={busy || reason.trim().length < 5}>{busy ? "Sending…" : "Send dispute"}</button>
+            <button className="icon-btn" onClick={() => setOpen(false)}>Cancel</button>
+          </div>
+          <div className="t-dim mono" style={{ fontSize: 11 }}>Disputes are public. They don't change the score yet: a moderator reviewing them is the next step.</div>
+        </div>
+      ) : (
+        <button className="icon-btn" onClick={() => (setOpen(true), setMsg(null))}>🚩 Dispute this rating</button>
+      )}
+    </div>
+  );
+}
 
 const ago = (t: number) => {
   const s = Math.max(1, Math.round((Date.now() - t) / 1000));
@@ -110,6 +152,7 @@ export function DetailDrawer({ endpointUrl, onClose }: { endpointUrl: string; on
                 </div>
                 <div>{r.comment || <span className="t-dim">no comment</span>}</div>
                 <div className="meta">tx {shortAddr(r.txSig, 6)} · payment verified</div>
+                <DisputeBox review={r} />
               </div>
             ))}
 

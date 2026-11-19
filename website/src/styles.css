@@ -564,3 +564,8 @@ main.flow-main { padding-left: 0; }
 .lb-tabs + .lb-grid { margin-top: 14px; }
 
 .fl-note.ok { border-color: var(--green); color: var(--green); }
+
+.dispute { margin-top: 8px; display: grid; gap: 6px; }
+.dispute-open { font-size: 12px; color: var(--amber); border-left: 2px solid var(--amber); padding-left: 8px; }
+.dispute-form { display: grid; gap: 6px; }
+.dispute-form textarea { width: 100%; resize: vertical; font-family: var(--sans); font-size: 13px; }

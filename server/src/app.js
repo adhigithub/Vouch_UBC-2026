@@ -98,8 +98,9 @@ export function createApp({ db, config, log = console.log, chain = null }) {
     const id = `${req.params.api}/${req.params.name}`;
     const s = scores().find((x) => x.endpointId === id);
     if (!s) return fail(res, 404, "unknown_endpoint");
+    const disputesFor = db.prepare("SELECT reason, created_at AS at FROM disputes WHERE payment_id = ? AND status = 'open' ORDER BY id DESC");
     const recentRatings = db.prepare("SELECT payment_id AS paymentId, rater, rating, reason, created_at AS at, onchain_tx AS onchainTx FROM ratings WHERE endpoint_id = ? ORDER BY id DESC LIMIT 20").all(id)
-      .map((r) => ({ ...r, explorer: isTxSig(r.onchainTx) ? explorerTx(r.onchainTx) : null }));
+      .map((r) => ({ ...r, explorer: isTxSig(r.onchainTx) ? explorerTx(r.onchainTx) : null, disputes: disputesFor.all(r.paymentId) }));
     const recentReviews = db.prepare("SELECT payment_id AS paymentId, reviewer, stars, comment, source, created_at AS at FROM reviews WHERE endpoint_id = ? ORDER BY id DESC LIMIT 20").all(id);
     res.json({ ...s, recentRatings, recentReviews });
   });
@@ -128,6 +129,8 @@ export function createApp({ db, config, log = console.log, chain = null }) {
     const page = renderGrokPage({
       scores: scores(),
       changes: recentChanges(db),
+      disputes: db.prepare(`SELECT d.endpoint_id AS endpointId, d.reason, d.created_at AS at, r.rating, r.reason AS ratingReason
+        FROM disputes d LEFT JOIN ratings r ON r.payment_id = d.payment_id WHERE d.status = 'open' ORDER BY d.id DESC LIMIT 10`).all(),
       ratings,
       payments,
       chain: chain ? { programId: chain.programId, program: explorerAddress(chain.programId) } : null,
@@ -211,6 +214,31 @@ export function createApp({ db, config, log = console.log, chain = null }) {
     res.json({ received: list.length, accepted, duplicates, ignored });
   });
 
+  // ---------- disputes ----------
+  // Anyone can flag an agent rating as unfair. It's saved and shown publicly (on the
+  // endpoint page and in /grok) as "under review". It doesn't change any score yet:
+  // a moderator deciding disputes is the next step.
+
+  app.post("/disputes", (req, res) => {
+    const { paymentId, reason } = req.body || {};
+    const rating = typeof paymentId === "string" ? ratingForPayment(db, paymentId) : null;
+    if (!rating) return fail(res, 404, "rating_not_found");
+    const text = typeof reason === "string" ? reason.trim() : "";
+    if (text.length < 5 || text.length > 500) return fail(res, 400, "reason_must_be_5_to_500_characters");
+    const open = db.prepare("SELECT COUNT(*) AS n FROM disputes WHERE payment_id = ? AND status = 'open'").get(paymentId).n;
+    if (open >= 5) return fail(res, 429, "too_many_open_disputes_for_this_rating");
+    const r = db.prepare("INSERT INTO disputes (payment_id, endpoint_id, reason, created_at) VALUES (?, ?, ?, ?)")
+      .run(paymentId, rating.endpoint_id, text, new Date().toISOString());
+    log(`[dispute] ${rating.endpoint_id} rating ${paymentId.slice(0, 10)}... disputed: ${text.slice(0, 80)}`);
+    res.json({ status: "open", id: Number(r.lastInsertRowid), endpointId: rating.endpoint_id });
+  });
+
+  app.get("/disputes", (req, res) => {
+    const rows = db.prepare(`SELECT d.id, d.payment_id AS paymentId, d.endpoint_id AS endpointId, d.reason, d.status, d.created_at AS at,
+        r.rating, r.reason AS ratingReason FROM disputes d LEFT JOIN ratings r ON r.payment_id = d.payment_id ORDER BY d.id DESC LIMIT 100`).all();
+    res.json(rows);
+  });
+
   // ---------- ratings ----------
 
   app.post("/rate", async (req, res) => {
@@ -278,7 +306,7 @@ export function createApp({ db, config, log = console.log, chain = null }) {
       db.exec(`VACUUM INTO '${backup.replace(/'/g, "''")}'`);
     }
     const cleared = {};
-    for (const table of ["ratings", "reviews", "payments", "test_scores", "score_history"]) {
+    for (const table of ["ratings", "reviews", "payments", "test_scores", "score_history", "disputes"]) {
       cleared[table] = db.prepare(`DELETE FROM ${table}`).run().changes;
     }
     recordScoreChanges(db, { defaultTestScore: config.defaultTestScore, cause: "baseline" });
