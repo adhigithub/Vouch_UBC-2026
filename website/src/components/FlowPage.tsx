@@ -265,7 +265,9 @@ export function FlowPage() {
     loadModes();
   }, []);
   useEffect(() => {
-    if (events.length) logEnd.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    // Scroll only inside the step list, never the whole page.
+    const box = logEnd.current?.parentElement;
+    if (events.length && box) box.scrollTo({ top: box.scrollHeight, behavior: "smooth" });
   }, [events.length]);
 
   const last = events[events.length - 1];
