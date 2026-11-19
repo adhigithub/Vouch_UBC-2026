@@ -7,8 +7,8 @@ const PILLARS: { key: ScorePillar; sym: string; title: string; body: string; col
     body: "Vouch's own tester bots buy from every endpoint on a schedule and grade the answer against ground truth. Ratings can never lift a score more than 10 above this." },
   { key: "agentChecks", sym: "A", color: "#7C8CF8", title: "Agent post-flight checks",
     body: "After each paid call the agent runs 4 checks: got something, right schema, makes sense vs. Open-Meteo / CoinGecko, fast enough. Newer ratings outweigh old ones (×0.8 decay)." },
-  { key: "humanReviews", sym: "H", color: "#A855F7", title: "Human + Grok Bot X reviews",
-    body: "Developers rate on the web or by tagging @GrokBot on X. Every review still needs the tx signature of a real x402 payment to that endpoint." },
+  { key: "humanReviews", sym: "H", color: "#A855F7", title: "Human reviews",
+    body: "People who actually paid an endpoint leave a 1-5 star review on the web, signed with the wallet that paid. Every review needs the tx signature of a real x402 payment to that endpoint: no payment, no review." },
   { key: "retention", sym: "R", color: "#EC4899", title: "Repeat wallet retention",
     body: "The share of paying wallets that came back to buy again. Agents don't return to junk. Only counted once 3+ distinct wallets have paid." },
 ];
@@ -42,11 +42,10 @@ function Viz({ k, bad }: { k: ScorePillar; bad: boolean }) {
   if (k === "humanReviews")
     return (
       <div className="grok-card">
-        <img src="/assets/grok.jpg" alt="" />
         <div className="viz" style={{ marginTop: 0 }}>
-          <div><b>@dev_kai</b> <span className="t-dim">· on X</span></div>
-          <div>@GrokBot vouch {bad ? "/weather-api-3/current 5/100 \"asked for Austin, got 187°F Reykjavik\"" : "/weather/current 94/100 \"spot on\""} tx:4fZq…9wLm</div>
-          <div className="t-green">↳ verified payment · counted</div>
+          <div><b>CFzG…BC88</b> <span className="t-dim">· wallet-signed review</span></div>
+          <div>{bad ? "★☆☆☆☆ /weather-api-3/current \"asked for Austin, got 187°F Reykjavik\"" : "★★★★★ /weather/current \"spot on\""} · tx 4fZq…9wLm</div>
+          <div className="t-green">↳ signed by the wallet that paid · verified payment · counted</div>
         </div>
       </div>
     );

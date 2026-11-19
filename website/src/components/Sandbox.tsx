@@ -9,7 +9,6 @@ import {
   createDemoSigner,
   explorerTxUrl,
   fetchRecentPayments,
-  grokCommand,
   isValidTxSig,
   randomSig,
   resolveEndpoint,
@@ -190,7 +189,6 @@ function ReviewForm() {
       </div>
       <div className="field">
         <label>Same review from X</label>
-        <div className="grok-cmd"><img src="/assets/grok.jpg" alt="" /><span>{grokCommand({ endpointUrl, rating, comment, txSig })}</span></div>
       </div>
       <button className="btn" type="submit" disabled={busy || !txSig || !signer}>
         {busy ? "Signing + verifying…" : signer ? "Sign & submit review" : "Connect a wallet to submit"}

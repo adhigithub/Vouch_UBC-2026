@@ -167,7 +167,7 @@ export interface ScoreBreakdown {
   canary: number | null;
   /** A: agent post-flight checks (decayed share of good ratings). */
   agentChecks: number | null;
-  /** H: human + @GrokBot X reviews. */
+  /** H: human reviews, signed by the wallet that paid. */
   humanReviews: number | null;
   /** R: share of paying wallets that came back. */
   retention: number | null;
@@ -331,12 +331,6 @@ export function randomSig(len = 88): string {
 export const buildReviewChallenge = (txSig: string, endpointUrl: string, rating: number) =>
   `Vouch Review Authorization\nTx: ${txSig.trim()}\nEndpoint: ${endpointUrl}\nRating: ${rating}`;
 
-/** The equivalent X command a human posts to rate via @GrokBot. */
-export function grokCommand(s: Partial<ReviewSubmission>): string {
-  const tx = s.txSig ? shortAddr(s.txSig.trim(), 6) : "<txSig>";
-  const comment = s.comment?.trim() ? ` "${s.comment.trim().slice(0, 60)}"` : "";
-  return `@GrokBot vouch ${s.endpointUrl ?? "<endpoint>"} ${s.rating ?? "<0-100>"}/100${comment} tx:${tx}`;
-}
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const now = () => Date.now();

@@ -14,7 +14,7 @@ import { TagChip } from "./Leaderboard";
 const NAMES: Record<ScorePillar, [string, string]> = {
   canary: ["Synthetic canary bots", "T"],
   agentChecks: ["Agent post-flight checks", "A"],
-  humanReviews: ["Human + @GrokBot X reviews", "H"],
+  humanReviews: ["Human reviews (wallet-signed)", "H"],
   retention: ["Repeat wallet retention", "R"],
 };
 
