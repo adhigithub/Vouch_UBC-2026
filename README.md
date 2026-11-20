@@ -211,7 +211,7 @@ cd stream && npm run check                # filter.js against real devnet paymen
 | Arvindh Sriram | [@AdHi018](https://github.com/AdHi018) |
 | Ameya Dhakappa | [@ameya-d5](https://github.com/ameya-d5) |
 | Shrutha Bangalore | [@ShruthaBangalore](https://github.com/ShruthaBangalore) |
-| Joel Jijo | |
+| Joel Jijo | [@joeljijo87](https://github.com/joeljijo87) |
 
 <div align="center">
 
