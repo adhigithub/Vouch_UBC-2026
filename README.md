@@ -208,9 +208,10 @@ cd stream && npm run check                # filter.js against real devnet paymen
 
 | Member | GitHub |
 |---|---|
-| TODO | [@ameya-d5](https://github.com/ameya-d5) |
-| TODO | [@AdHi018](https://github.com/AdHi018) |
-| TODO | [@ShruthaBangalore](https://github.com/ShruthaBangalore) |
+| Arvindh Sriram | [@AdHi018](https://github.com/AdHi018) |
+| Ameya Dhakappa | [@ameya-d5](https://github.com/ameya-d5) |
+| Shrutha Bangalore | [@ShruthaBangalore](https://github.com/ShruthaBangalore) |
+| Joel Jijo | |
 
 <div align="center">
 
