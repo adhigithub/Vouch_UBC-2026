@@ -1,12 +1,10 @@
 import { ActEngine } from "./components/ActEngine";
 import { ActPipeline } from "./components/ActPipeline";
 import { ActTrap } from "./components/ActTrap";
-import { Close } from "./components/Close";
 import { Hero } from "./components/Hero";
 import { Leaderboard } from "./components/Leaderboard";
 import { Nav } from "./components/Nav";
 import { PlayheadRail } from "./components/PlayheadRail";
-import { Sandbox } from "./components/Sandbox";
 import { FlowPage } from "./components/FlowPage";
 import { useIsFlowPage } from "./hooks/useRoute";
 
@@ -33,8 +31,6 @@ export default function App() {
         <ActEngine />
         <ActPipeline />
         <Leaderboard />
-        <Sandbox />
-        <Close />
       </main>
     </>
   );

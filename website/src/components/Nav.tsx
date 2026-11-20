@@ -6,7 +6,6 @@ import { VLogo } from "./VLogo";
 const TABS = [
   { id: "overview", label: "Overview" },
   { id: "leaderboard", label: "Solana Leaderboard" },
-  { id: "sandbox", label: "Agent Sandbox" },
   { id: "flow", label: "Live Flow" },
 ];
 
