@@ -14,7 +14,7 @@
 
 **Track:** Agentic Payments and AI · **Chain award:** Best use of Solana · **Bounties:** QuickNode Streams, Grok Bot
 
-[Demo video](#) · [Program on Explorer](https://explorer.solana.com/address/GyYPjRNghiX96xFtP98eNMiYjKfrF5ktKLf1Mm2YBgni?cluster=devnet) · [Grok chat exports](grok-chat-exports/README.md)
+[Devpost](https://devpost.com/software/vouch-04ghzw) · [Demo video](#) · [Program on Explorer](https://explorer.solana.com/address/GyYPjRNghiX96xFtP98eNMiYjKfrF5ktKLf1Mm2YBgni?cluster=devnet) · [Grok chat exports](grok-chat-exports/README.md)
 
 </div>
 
